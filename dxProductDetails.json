@@ -1,0 +1,37 @@
+{
+  "a0sDebugAdditionalProductNames": [
+    "mFileSystemItem",
+    "mDebugOutput",
+    "mWindowsSDK",
+    "mConsole"
+  ],
+  "a0sDependentOnProductNames": [
+    "mHTTPClient",
+    "mHTTPConnection",
+    "mHTTPProtocol",
+    "mHTTPServer",
+    "mMultiThreading",
+    "mNotProvided",
+    "mTCPIPConnection",
+    "mWindowsSDK"
+  ],
+  "a0sReleaseAdditionalProductNames": [
+    "mSSL"
+  ],
+  "asProductTypes": [
+    "Python module"
+  ],
+  "o0Repository": {
+    "sStructureVersion": "2021-07-02 11:16",
+    "sType": "GitHub",
+    "sbBranch": "main",
+    "sbRepositoryName": "mHTTPProxy",
+    "sbUserName": "SkyLined"
+  },
+  "oProductVersion": "2021-07-07 20:50",
+  "s0PythonModuleName": "mHTTPProxy",
+  "sProductAuthor": "SkyLined",
+  "sProductName": "mHTTPProxy",
+  "sStructureVersion": "2021-07-02 11:16",
+  "sb0ProductURL": "https://github.com/SkyLined/mHTTPProxy"
+}
