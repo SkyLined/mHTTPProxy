@@ -405,7 +405,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     oHeaders = oRequest.oHeaders.foClone();
     # This client does not decide how we handle our connection to the server, so we will overwrite any "Connection"
     # header copied from the request to the proxy with the value we want for the request to the server:
-    oHeaders.fbReplaceHeadersForName(b"Connection", b"Keep-Alive");
+    oHeaders.fbReplaceHeadersForNameAndValue(b"Connection", b"Keep-Alive");
     # We will not allow the client to request a compression that we cannot decode so we will remove any
     # "Accept-Encoding" value copied from the request to the proxy that we cannot decode:
     for oAcceptEncodingHeader in oHeaders.faoGetHeadersForName(b"Accept-Encoding"):
