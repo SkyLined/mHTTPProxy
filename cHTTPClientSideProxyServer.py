@@ -232,8 +232,8 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     if oSelf.bSSLIsSupported and isinstance(oException, (oSelf.cSSLSecureHandshakeException, oSelf.cSSLIncorrectHostnameException)):
       return foGetErrorResponse(sbHTTPVersion, 504, b"The connection to the server could not be secured.");
     raise;
-
-@ShowDebugOutput
+  
+  @ShowDebugOutput
   def __fHandleTerminatedCallbackFromServer(oSelf, oHTTPServer):
     assert oSelf.__bStopping, \
         "HTTP server terminated unexpectedly";
@@ -432,7 +432,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         sb0Body = oRequest.sb0Body, # oRequest.sb0Body is the raw data, so this also handles Chunked requests.
       );
     except Exception as oException:
-      oResponse = oSelf.foGetResponseForException(, oException, oRequest.sbVersion);
+      oResponse = oSelf.foGetResponseForException(oException, oRequest.sbVersion);
     else:
       if oSelf.__bStopping:
         fShowDebugOutput("Stopping.");
