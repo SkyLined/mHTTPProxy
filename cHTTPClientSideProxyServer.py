@@ -7,12 +7,13 @@ except ModuleNotFoundError as oException:
     raise;
   ShowDebugOutput = fShowDebugOutput = lambda x: x; # NOP
 
-from mHTTPConnection import cHTTPConnection, cHTTPResponse, cHTTPHeaders, mExceptions, cURL;
+from mHTTPConnection import cHTTPConnection, cHTTPResponse, cHTTPHeaders, cURL;
 from mHTTPServer import cHTTPServer;
 from mHTTPClient import cHTTPClient, cHTTPClientUsingProxyServer, cHTTPClientUsingAutomaticProxyServer;
 from mMultiThreading import cLock, cThread, cWithCallbacks;
 from mNotProvided import *;
 from mTCPIPConnection import cTransactionalBufferedTCPIPConnection;
+from .mExceptions import *;
 
 # To turn access to data store in multiple variables into a single transaction, we will create locks.
 # These locks should only ever be locked for a short time; if it is locked for too long, it is considered a "deadlock"
@@ -42,28 +43,8 @@ def foGetErrorResponse(sbVersion, uStatusCode, sbBody):
     bAutomaticallyAddContentLengthHeader = True,
   );
 
-def foGetResponseForException(oException, sbHTTPVersion):
-  if isinstance(oException, (mExceptions.cDNSUnknownHostnameException, mExceptions.cTCPIPInvalidAddressException)):
-    return foGetErrorResponse(sbHTTPVersion, 400, b"The server cannot be found.");
-  if isinstance(oException, mExceptions.cTCPIPConnectTimeoutException):
-    return foGetErrorResponse(sbHTTPVersion, 504, b"Connecting to the server timed out.");
-  if isinstance(oException, mExceptions.cTCPIPDataTimeoutException):
-    return foGetErrorResponse(sbHTTPVersion, 504, b"The server did not respond before the request timed out.");
-  if isinstance(oException, mExceptions.cHTTPOutOfBandDataException):
-    return foGetErrorResponse(sbHTTPVersion, 502, b"The server send out-of-band data.");
-  if isinstance(oException, mExceptions.cTCPIPConnectionRefusedException):
-    return foGetErrorResponse(sbHTTPVersion, 502, b"The server did not accept our connection.");
-  if isinstance(oException, (mExceptions.cTCPIPConnectionShutdownException, mExceptions.cTCPIPConnectionDisconnectedException)):
-    return foGetErrorResponse(sbHTTPVersion, 502, b"The server disconnected before sending a response.");
-  if isinstance(oException, mExceptions.cHTTPInvalidMessageException):
-    return foGetErrorResponse(sbHTTPVersion, 502, b"The server send an invalid HTTP response.");
-  if mExceptions.cSSLException and isinstance(oException, mExceptions.cSSLSecureTimeoutException):
-    return foGetErrorResponse(sbHTTPVersion, 504, b"The connection to the server could not be secured before the request timed out.");
-  if mExceptions.cSSLException and isinstance(oException, (mExceptions.cSSLSecureHandshakeException, mExceptions.cSSLIncorrectHostnameException)):
-    return foGetErrorResponse(sbHTTPVersion, 504, b"The connection to the server could not be secured.");
-  raise;
-
 class cHTTPClientSideProxyServer(cWithCallbacks):
+  bSSLIsSupported = cHTTPServer.bSSLIsSupported;
   u0DefaultMaxNumberOfConnectionsToChainedProxy = 10;
   n0DefaultSecureConnectionToChainedProxyTimeoutInSeconds = 5;
   
@@ -231,7 +212,28 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     oSelf.__oHTTPServer.fAddCallback("terminated",
         oSelf.__fHandleTerminatedCallbackFromServer);
   
-  @ShowDebugOutput
+  def foGetResponseForException(oSelf, oException, sbHTTPVersion):
+    if isinstance(oException, (oSelf.cDNSUnknownHostnameException, oSelf.cTCPIPInvalidAddressException)):
+      return foGetErrorResponse(sbHTTPVersion, 400, b"The server cannot be found.");
+    if isinstance(oException, oSelf.cTCPIPConnectTimeoutException):
+      return foGetErrorResponse(sbHTTPVersion, 504, b"Connecting to the server timed out.");
+    if isinstance(oException, oSelf.cTCPIPDataTimeoutException):
+      return foGetErrorResponse(sbHTTPVersion, 504, b"The server did not respond before the request timed out.");
+    if isinstance(oException, oSelf.cHTTPOutOfBandDataException):
+      return foGetErrorResponse(sbHTTPVersion, 502, b"The server send out-of-band data.");
+    if isinstance(oException, oSelf.cTCPIPConnectionRefusedException):
+      return foGetErrorResponse(sbHTTPVersion, 502, b"The server did not accept our connection.");
+    if isinstance(oException, (oSelf.cTCPIPConnectionShutdownException, oSelf.cTCPIPConnectionDisconnectedException)):
+      return foGetErrorResponse(sbHTTPVersion, 502, b"The server disconnected before sending a response.");
+    if isinstance(oException, oSelf.cHTTPInvalidMessageException):
+      return foGetErrorResponse(sbHTTPVersion, 502, b"The server send an invalid HTTP response.");
+    if oSelf.bSSLIsSupported and isinstance(oException, oSelf.cSSLSecureTimeoutException):
+      return foGetErrorResponse(sbHTTPVersion, 504, b"The connection to the server could not be secured before the request timed out.");
+    if oSelf.bSSLIsSupported and isinstance(oException, (oSelf.cSSLSecureHandshakeException, oSelf.cSSLIncorrectHostnameException)):
+      return foGetErrorResponse(sbHTTPVersion, 504, b"The connection to the server could not be secured.");
+    raise;
+
+@ShowDebugOutput
   def __fHandleTerminatedCallbackFromServer(oSelf, oHTTPServer):
     assert oSelf.__bStopping, \
         "HTTP server terminated unexpectedly";
@@ -389,7 +391,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       # This request was made to the proxy; the URL should be absolute:
       try:
         oURL = cURL.foFromBytesString(oRequest.sbURL);
-      except mExceptions.cInvalidURLException:
+      except cURL.cInvalidURLException:
         if oRequest.sbURL.split("://")[0] not in ["http", "https"]:
           fShowDebugOutput("HTTP request URL (%s) suggest request was meant for a server, not a proxy." % repr(oRequest.sbURL));
           sReason = "This is a HTTP proxy, not a HTTP server.";
@@ -430,7 +432,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         sb0Body = oRequest.sb0Body, # oRequest.sb0Body is the raw data, so this also handles Chunked requests.
       );
     except Exception as oException:
-      oResponse = foGetResponseForException(oException, oRequest.sbVersion);
+      oResponse = oSelf.foGetResponseForException(, oException, oRequest.sbVersion);
     else:
       if oSelf.__bStopping:
         fShowDebugOutput("Stopping.");
@@ -500,7 +502,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       try:
         o0ConnectionToServer = oSelf.__oHTTPClient.fo0GetConnectionAndStartTransactionForURL(oServerURL, bSecure = False);
       except Exception as oException:
-        return foGetResponseForException(oException, oRequest.sbVersion);
+        return oSelf.foGetResponseForException(oException, oRequest.sbVersion);
       if o0ConnectionToServer is None:
         # This is probably because we are stopping.
         return foGetErrorResponse(oRequest.sbVersion, 500, b"Could not connect to server.");
@@ -610,11 +612,11 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           break;
     except Exception as oException:
       if sWhile is None: raise; # Exception thrown during __ftxRequestHandler call!?
-      if mExceptions.cSSLException and isinstance(oException, mExceptions.cSSLException):
+      if oSelf.bSSLIsSupported and isinstance(oException, oSelf.cSSLException):
         fShowDebugOutput("Secure connection exception while %s: %s." % (sWhile, oException));
-      elif isinstance(oException, mExceptions.cTCPIPConnectionShutdownException):
+      elif isinstance(oException, oSelf.cTCPIPConnectionShutdownException):
         fShowDebugOutput("Shutdown while %s." % sWhile);
-      elif isinstance(oException, mExceptions.cTCPIPConnectionDisconnectedException):
+      elif isinstance(oException, oSelf.cTCPIPConnectionDisconnectedException):
         fShowDebugOutput("Disconnected while %s." % sWhile);
       else:
         raise;
@@ -629,7 +631,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
             oConnectionFromClient.fDisconnect();
           finally:
             oConnectionFromClient.fEndTransaction();
-        except mExceptions.cTCPIPConnectionDisconnectedException as oException:
+        except oSelf.cTCPIPConnectionDisconnectedException as oException:
           pass;
       oSelf.__oPropertyAccessTransactionLock.fAcquire();
       try:
@@ -725,13 +727,13 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         if bServerInTransactions:
           oConnectionToServer.fEndTransaction();
           bServerInTransactions = False;
-    except mExceptions.cTCPIPDataTimeoutException:
+    except oSelf.cTCPIPDataTimeoutException:
       if s0HandleExceptionsWhile is None: raise; # Exception thrown during __ftxRequestHandler call!?
       fShowDebugOutput("Transaction timeout while %s." % s0HandleExceptionsWhile);
-    except mExceptions.cTCPIPConnectionShutdownException:
+    except oSelf.cTCPIPConnectionShutdownException:
       if s0HandleExceptionsWhile is None: raise; # Exception thrown during __ftxRequestHandler call!?
       fShowDebugOutput("Shutdown while %s." % s0HandleExceptionsWhile);
-    except mExceptions.cTCPIPConnectionDisconnectedException:
+    except oSelf.cTCPIPConnectionDisconnectedException:
       if s0HandleExceptionsWhile is None: raise; # Exception thrown during __ftxRequestHandler call!?
       fShowDebugOutput("Disconnected while %s." % s0HandleExceptionsWhile);
     fShowDebugOutput("Stopped piping secure connection for client %s to server %s." % (oConnectionFromClient, repr(oServerURL.sbBase)));
@@ -743,7 +745,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           oConnectionFromClient.fDisconnect();
         finally:
           oConnectionFromClient.fEndTransaction();
-      except mExceptions.cTCPIPConnectionDisconnectedException as oException:
+      except oSelf.cTCPIPConnectionDisconnectedException as oException:
         pass;
     elif bClientInTransactions:
       oConnectionFromClient.fEndTransaction();
@@ -755,7 +757,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           oConnectionToServer.fDisconnect();
         finally:
           oConnectionToServer.fEndTransaction();
-      except mExceptions.cTCPIPConnectionDisconnectedException as oException:
+      except oSelf.cTCPIPConnectionDisconnectedException as oException:
         pass;
     elif bServerInTransactions:
       oConnectionToServer.fEndTransaction();
@@ -788,3 +790,6 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
   
   def __str__(oSelf):
     return "%s#%X{%s}" % (oSelf.__class__.__name__, id(oSelf), ", ".join(oSelf.fasGetDetails()));
+
+for cException in acExceptions:
+  setattr(cHTTPClientSideProxyServer, cException.__name__, cException);
