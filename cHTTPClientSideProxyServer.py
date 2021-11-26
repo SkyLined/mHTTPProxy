@@ -19,6 +19,7 @@ from .mExceptions import *;
 # These locks should only ever be locked for a short time; if it is locked for too long, it is considered a "deadlock"
 # bug, where "too long" is defined by the following value:
 gnDeadlockTimeoutInSeconds = 1; # We're not doing anything time consuming, so this should suffice.
+guDefaultPortNumber = 8080; # Default proxy port number
 
 grbHostnamePort = re.compile(
   rb"^"                                     # {
@@ -178,7 +179,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     oSelf.__oHTTPServer = cHTTPServer(
       ftxRequestHandler = oSelf.__ftxRequestHandler,
       sbzHostname = sbzHostname,
-      uzPortNumber = uzPortNumber,
+      uzPortNumber = fxGetFirstProvidedValue(uzPortNumber, guDefaultPortNumber),
       o0SSLContext = o0ServerSSLContext,
     );
     
