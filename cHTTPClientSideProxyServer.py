@@ -625,8 +625,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       fShowDebugOutput("Stopped intercepting secure connection for client %s to server %s." % (oConnectionFromClient, repr(oServerURL.sbBase)));
       if oConnectionFromClient.bConnected:
         try:
-          assert oConnectionFromClient.fbStartTransaction(), \
-              "Cannot start a transaction on the connection from the client (%s)" % repr(oConnectionFromClient);
+          oConnectionFromClient.fStartTransaction();
           try:
             oConnectionFromClient.fDisconnect();
           finally:
@@ -695,16 +694,14 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           assert oConnectionFromClient.fbRestartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds), \
               "Cannot restart transaction!?";
         else:
-          assert oConnectionFromClient.fbStartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds), \
-              "Cannot start transaction!?";
+          oConnectionFromClient.fStartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
           bClientInTransactions = True;
         bServerInTransactions = oConnectionToServer in aoConnectionsWithDataToPipe;
         if bServerInTransactions:
           assert oConnectionToServer.fbRestartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds), \
               "Cannot restart transaction!?";
         else:
-          assert oConnectionToServer.fbStartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds), \
-              "Cannot start transaction!?";
+          oConnectionToServer.fStartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
           bServerInTransactions = True;
         for oFromConnection in aoConnectionsWithDataToPipe:
           s0HandleExceptionsWhile = "reading bytes from %s" % ("client" if oFromConnection is oConnectionFromClient else "server");
@@ -739,8 +736,8 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     fShowDebugOutput("Stopped piping secure connection for client %s to server %s." % (oConnectionFromClient, repr(oServerURL.sbBase)));
     if oConnectionFromClient.bConnected:
       try:
-        assert bClientInTransactions or oConnectionFromClient.fbStartTransaction(), \
-            "Cannot start a transaction on the connection from the client (%s)" % repr(oConnectionFromClient);
+        if not bClientInTransactions:
+          oConnectionFromClient.fStartTransaction();
         try:
           oConnectionFromClient.fDisconnect();
         finally:
@@ -751,8 +748,8 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       oConnectionFromClient.fEndTransaction();
     if oConnectionToServer.bConnected:
       try:
-        assert bServerInTransactions or oConnectionToServer.fbStartTransaction(), \
-            "Cannot start a transaction on the connection to the server (%s)" % repr(oConnectionToServer);
+        if not bServerInTransactions:
+          oConnectionToServer.fStartTransaction();
         try:
           oConnectionToServer.fDisconnect();
         finally:
