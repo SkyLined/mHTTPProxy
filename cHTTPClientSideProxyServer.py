@@ -855,15 +855,13 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         # We also need to reset the transaction timeout.
         bClientInTransactions = oConnectionFromClient in aoConnectionsWithDataToPipe;
         if bClientInTransactions:
-          assert oConnectionFromClient.fbRestartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds), \
-              "Cannot restart transaction!?";
+          oConnectionFromClient.fRestartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
         else:
           oConnectionFromClient.fStartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
           bClientInTransactions = True;
         bServerInTransactions = oConnectionToServer in aoConnectionsWithDataToPipe;
         if bServerInTransactions:
-          assert oConnectionToServer.fbRestartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds), \
-              "Cannot restart transaction!?";
+          oConnectionToServer.fRestartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
         else:
           oConnectionToServer.fStartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
           bServerInTransactions = True;
