@@ -78,6 +78,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     n0zSecureConnectionPipeTotalDurationTimeoutInSeconds = zNotProvided,
     n0zSecureConnectionPipeIdleTimeoutInSeconds = zNotProvided,
     u0zMaxNumberOfConnectionsToServer = zNotProvided,
+    fztxDirectRequestHandler = zNotProvided,
   ):
     oSelf.__o0InterceptSSLConnectionsCertificateAuthority = o0InterceptSSLConnectionsCertificateAuthority;
     oSelf.__n0zConnectTimeoutInSeconds = n0zConnectTimeoutInSeconds;
@@ -89,6 +90,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         n0zSecureConnectionPipeTotalDurationTimeoutInSeconds, oSelf.n0DefaultSecureConnectionPipeTotalDurationTimeoutInSeconds);
     oSelf.__n0SecureConnectionPipeIdleTimeoutInSeconds = fxGetFirstProvidedValue( \
         n0zSecureConnectionPipeIdleTimeoutInSeconds, oSelf.n0DefaultSecureConnectionPipeIdleTimeoutInSeconds);
+    oSelf.__fztxDirectRequestHandler = fztxDirectRequestHandler;
     
     oSelf.__oPropertyAccessTransactionLock = cLock(
       "%s.__oPropertyAccessTransactionLock" % oSelf.__class__.__name__,
@@ -527,11 +529,29 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         return (oResponse, False);
       fShowDebugOutput("HTTP CONNECT request failed.");
       return (oResponse, True);
-    elif oRequest.sbMethod.upper() not in [b"CONNECT", b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"TRACE", b"PATCH"]:
+    # Detect and handle direct requests from a browser, as if this is a server:
+    try:
+      oURL = cURL.foFromBytesString(oRequest.sbURL);
+    except cURL.cInvalidURLException:
+      if oRequest.sbURL.split(b"://")[0] in [b"http", b"https"]:
+        fShowDebugOutput("HTTP request URL (%s) is not valid." % repr(oRequest.sbURL));
+        oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL was not valid.");
+        return (oResponse, True);
+      oSelf.fFireCallbacks("direct request received from client", oConnection, oRequest);
+      if fbIsProvided(oSelf.__fztxDirectRequestHandler):
+        (oResponse, bKeepConnectionOpen) = oSelf.__fztxDirectRequestHandler(oSelf, oConnection, oRequest);
+      else:
+        fShowDebugOutput("HTTP request URL (%s) suggest request was meant for a server, not a proxy." % repr(oRequest.sbURL));
+        oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"This is a HTTP proxy, not a HTTP server.");
+        bKeepConnectionOpen = True;
+      oSelf.fFireCallbacks("direct request received and response sent to client", oConnection, oRequest, oResponse);
+      return (oResponse, bKeepConnectionOpen);
+    ### Sanity checks ##########################################################
+    if oRequest.sbMethod.upper() not in [b"CONNECT", b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"TRACE", b"PATCH"]:
       fShowDebugOutput("HTTP request method (%s) is not valid." % repr(oRequest.sbMethod));
       oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The request method was not valid.");
       return (oResponse, True);
-    elif o0SecureConnectionInterceptedForServerURL is not None:
+    if o0SecureConnectionInterceptedForServerURL is not None:
       # This request was made to a connection we are intercepting after the client send a HTTP CONNECT request.
       # The URL should be relative:
       if oRequest.sbURL[:1] != b"/":
@@ -539,19 +559,6 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL was not valid.");
         return (oResponse, True);
       oURL = o0SecureConnectionInterceptedForServerURL.foFromRelativeBytesString(oRequest.sbURL, bMustBeRelative = True);
-    else:
-      # This request was made to the proxy; the URL should be absolute:
-      try:
-        oURL = cURL.foFromBytesString(oRequest.sbURL);
-      except cURL.cInvalidURLException:
-        if oRequest.sbURL.split("://")[0] not in ["http", "https"]:
-          fShowDebugOutput("HTTP request URL (%s) suggest request was meant for a server, not a proxy." % repr(oRequest.sbURL));
-          sReason = "This is a HTTP proxy, not a HTTP server.";
-        else:
-          fShowDebugOutput("HTTP request URL (%s) is not valid." % repr(oRequest.sbURL));
-          sReason = "The requested URL was not valid.",
-        oResponse = foGetErrorResponse(oRequest.sbVersion, 400, sbReason);
-        return (oResponse, True);
     oResponse = oSelf.__foResponseForInvalidProxyHeaderInRequest(oRequest)
     if oResponse:
       fShowDebugOutput("Invalid proxy header.");
