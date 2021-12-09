@@ -869,18 +869,18 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           bServerInTransactions = True;
         for oFromConnection in aoConnectionsWithDataToPipe:
           s0HandleExceptionsWhile = "reading bytes from %s" % ("client" if oFromConnection is oConnectionFromClient else "server");
-          sBytes = oFromConnection.fsReadAvailableBytes();
+          sbBytes = oFromConnection.fsbReadAvailableBytes();
           s0HandleExceptionsWhile = None;
           fShowDebugOutput("%s %s=%d bytes=%s %s." % (
             oConnectionFromClient,
             "<" if oFromConnection is oConnectionToServer else "",
-            len(sBytes),
+            len(sbBytes),
             ">" if oFromConnection is oConnectionFromClient else "",
             oConnectionToServer,
           ));
           oToConnection = oConnectionFromClient if oFromConnection is oConnectionToServer else oConnectionToServer;
           s0HandleExceptionsWhile = "writing bytes to %s" % ("client" if oToConnection is oConnectionFromClient else "server");
-          oToConnection.fWriteBytes(sBytes);
+          oToConnection.fWriteBytes(sbBytes);
           s0HandleExceptionsWhile = None;
         if bClientInTransactions:
           oConnectionFromClient.fEndTransaction();
