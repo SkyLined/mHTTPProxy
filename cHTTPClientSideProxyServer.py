@@ -5,7 +5,8 @@ try: # mDebugOutput use is Optional
 except ModuleNotFoundError as oException:
   if oException.args[0] != "No module named 'mDebugOutput'":
     raise;
-  ShowDebugOutput = fShowDebugOutput = lambda x: x; # NOP
+  ShowDebugOutput = lambda fx: fx; # NOP
+  fShowDebugOutput = lambda x, s0 = None: x; # NOP
 
 from mHTTPConnection import cHTTPConnection, cHTTPResponse, cHTTPHeaders, cURL;
 from mHTTPServer import cHTTPServer;
@@ -365,7 +366,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     });
   
   def foGetResponseForException(oSelf, oException, sbHTTPVersion):
-    if isinstance(oException, (oSelf.cDNSUnknownHostnameException, oSelf.cTCPIPInvalidAddressException)):
+    if isinstance(oException, (oSelf.cTCPIPDNSUnknownHostnameException, oSelf.cTCPIPInvalidAddressException)):
       return foGetErrorResponse(sbHTTPVersion, 400, b"The server cannot be found.");
     if isinstance(oException, oSelf.cTCPIPConnectTimeoutException):
       return foGetErrorResponse(sbHTTPVersion, 504, b"Connecting to the server timed out.");
@@ -532,7 +533,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     # Detect and handle direct requests from a browser, as if this is a server:
     try:
       oURL = cURL.foFromBytesString(oRequest.sbURL);
-    except cURL.cInvalidURLException:
+    except cURL.cHTTPInvalidURLException:
       if oRequest.sbURL.split(b"://")[0] in [b"http", b"https"]:
         fShowDebugOutput("HTTP request URL (%s) is not valid." % repr(oRequest.sbURL));
         oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL was not valid.");
@@ -659,7 +660,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       # client and server. We will ask our HTTP client to set up the connection, because the client may be using
       # a proxy, so we cannot connect directly.
       try:
-        o0ConnectionToServer = oSelf.__oClient.fo0GetConnectionAndStartTransactionForURL(oServerURL, bSecure = False);
+        o0ConnectionToServer = oSelf.__oClient.fo0GetConnectionAndStartTransactionForURL(oServerURL, bDoNotUseSLL = True);
       except Exception as oException:
         return oSelf.foGetResponseForException(oException, oRequest.sbVersion);
       if o0ConnectionToServer is None:
@@ -791,7 +792,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
             oConnectionFromClient.fDisconnect();
           finally:
             oConnectionFromClient.fEndTransaction();
-        except oSelf.cTCPIPConnectionDisconnectedException as oException:
+        except oSelf.cTCPIPConnectionDisconnectedException:
           pass;
       oSelf.__oPropertyAccessTransactionLock.fAcquire();
       try:
@@ -911,7 +912,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           oConnectionFromClient.fDisconnect();
         finally:
           oConnectionFromClient.fEndTransaction();
-      except oSelf.cTCPIPConnectionDisconnectedException as oException:
+      except oSelf.cTCPIPConnectionDisconnectedException:
         pass;
     elif bClientInTransactions:
       oConnectionFromClient.fEndTransaction();
@@ -923,7 +924,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           oConnectionToServer.fDisconnect();
         finally:
           oConnectionToServer.fEndTransaction();
-      except oSelf.cTCPIPConnectionDisconnectedException as oException:
+      except oSelf.cTCPIPConnectionDisconnectedException:
         pass;
     elif bServerInTransactions:
       oConnectionToServer.fEndTransaction();

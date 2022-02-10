@@ -210,7 +210,7 @@ def fTestClient(
   
   for (uNumberOfRequests, oURL, cExpectedExceptionClass, acAcceptableExceptionClasses, auAcceptableStatusCodes) in (
     (1, oUnknownHostnameURL,
-        cDNSUnknownHostnameException, [],
+        cTCPIPDNSUnknownHostnameException, [],
         [400]),
     (1, oInvalidAddressURL,
         cTCPIPInvalidAddressException, [],
