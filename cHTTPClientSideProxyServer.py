@@ -64,7 +64,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     bUseChainedProxy = False,
     o0ChainedProxyURL = None,
     o0ChainedProxyHTTPClient = None,
-    bAllowUnverifiableCertificatesForChainedProxy = False,
+    bVerifyCertificatesForChainedProxy = True,
     bCheckChainedProxyHostname = True,
     u0zMaxNumberOfConnectionsToChainedProxy = zNotProvided,
     # Connections to proxy use nzConnectTimeoutInSeconds
@@ -74,7 +74,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     n0zConnectTimeoutInSeconds = zNotProvided,
     n0zSecureTimeoutInSeconds = zNotProvided,
     n0zTransactionTimeoutInSeconds = zNotProvided,
-    bAllowUnverifiableCertificates = False,
+    bVerifyCertificates = True,
     bCheckHostname = True,
     n0zSecureConnectionPipeTotalDurationTimeoutInSeconds = zNotProvided,
     n0zSecureConnectionPipeIdleTimeoutInSeconds = zNotProvided,
@@ -85,7 +85,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     oSelf.__n0zConnectTimeoutInSeconds = n0zConnectTimeoutInSeconds;
     oSelf.__n0zSecureTimeoutInSeconds = fxzGetFirstProvidedValueIfAny(n0zSecureTimeoutInSeconds, oSelf.n0DefaultSecureTimeoutInSeconds);
     oSelf.__n0zTransactionTimeoutInSeconds = fxzGetFirstProvidedValueIfAny(n0zTransactionTimeoutInSeconds, oSelf.n0DefaultTransactionTimeoutInSeconds);
-    oSelf.__bAllowUnverifiableCertificates = bAllowUnverifiableCertificates;
+    oSelf.__bVerifyCertificates = bVerifyCertificates;
     oSelf.__bCheckHostname = bCheckHostname;
     oSelf.__n0SecureConnectionPipeTotalDurationTimeoutInSeconds = fxGetFirstProvidedValue( \
         n0zSecureConnectionPipeTotalDurationTimeoutInSeconds, oSelf.n0DefaultSecureConnectionPipeTotalDurationTimeoutInSeconds);
@@ -147,7 +147,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         # work, so I've pushed this out until it makes sense to add these checks
         oSelf.__oClient = cHTTPClientUsingProxyServer(
           oProxyServerURL = o0ChainedProxyURL,
-          bAllowUnverifiableCertificatesForProxy = bAllowUnverifiableCertificatesForChainedProxy,
+          bVerifyCertificatesForProxy = bVerifyCertificatesForChainedProxy,
           bCheckProxyHostname = bCheckChainedProxyHostname,
           o0zCertificateStore = o0zCertificateStore,
           u0zMaxNumberOfConnectionsToProxy = fxGetFirstProvidedValue( \
@@ -157,13 +157,13 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
               n0zSecureConnectionToChainedProxyTimeoutInSeconds, oSelf.n0DefaultSecureConnectionToChainedProxyTimeoutInSeconds),
           n0zSecureConnectionToServerTimeoutInSeconds = oSelf.__n0zSecureTimeoutInSeconds,
           n0zTransactionTimeoutInSeconds = oSelf.__n0zTransactionTimeoutInSeconds,
-          bAllowUnverifiableCertificates = bAllowUnverifiableCertificates,
+          bVerifyCertificates = bVerifyCertificates,
           bCheckHostname = bCheckHostname,
         );
       else:
         oSelf.__oClient = cHTTPClientUsingAutomaticProxyServer(
           o0zCertificateStore = o0zCertificateStore, 
-          bAllowUnverifiableCertificatesForProxy = bAllowUnverifiableCertificatesForChainedProxy,
+          bVerifyCertificatesForProxy = bVerifyCertificatesForChainedProxy,
           bCheckProxyHostname = bCheckChainedProxyHostname,
           u0zMaxNumberOfConnectionsToServerWithoutProxy = u0zMaxNumberOfConnectionsToServer,
           u0zMaxNumberOfConnectionsToProxy = fxGetFirstProvidedValue( \
@@ -175,7 +175,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           n0zSecureConnectionToProxyTimeoutInSeconds = fxGetFirstProvidedValue( \
               n0zSecureConnectionToChainedProxyTimeoutInSeconds, oSelf.n0DefaultSecureConnectionToChainedProxyTimeoutInSeconds),
           n0zSecureConnectionToServerTimeoutInSeconds = oSelf.__n0zSecureTimeoutInSeconds,
-          bAllowUnverifiableCertificates = bAllowUnverifiableCertificates,
+          bVerifyCertificates = bVerifyCertificates,
           bCheckHostname = bCheckHostname,
         );
     else:
@@ -189,7 +189,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         n0zConnectTimeoutInSeconds = n0zConnectTimeoutInSeconds,
         n0zSecureTimeoutInSeconds = oSelf.__n0zSecureTimeoutInSeconds,
         n0zTransactionTimeoutInSeconds = oSelf.__n0zTransactionTimeoutInSeconds,
-        bAllowUnverifiableCertificates = bAllowUnverifiableCertificates,
+        bVerifyCertificates = bVerifyCertificates,
         bCheckHostname = bCheckHostname,
       );
     oSelf.__oServer = cHTTPServer(
