@@ -1,8 +1,9 @@
 import socket, threading;
+
+from mConsole  import oConsole;
 from mHTTPClient import *;
 from mHTTPClient.mExceptions import *;
 from mMultiThreading import cThread;
-from mConsole import oConsole;
 
 NORMAL =            0x0F07; # Light gray
 INFO =              0x0F0F; # Bright white

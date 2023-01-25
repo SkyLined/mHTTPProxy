@@ -1,6 +1,7 @@
+from mConsole  import oConsole;
 from mHTTPProxy import cHTTPClientSideProxyServer;
 from mHTTPClient import cHTTPClientUsingProxyServer;
-from mConsole import oConsole;
+
 from fTestClient import fTestClient;
 
 def fTestProxyClientAndServer(

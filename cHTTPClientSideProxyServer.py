@@ -12,8 +12,12 @@ from mHTTPConnection import cHTTPConnection, cHTTPResponse, cHTTPHeaders, cURL;
 from mHTTPServer import cHTTPServer;
 from mHTTPClient import cHTTPClient, cHTTPClientUsingProxyServer, cHTTPClientUsingAutomaticProxyServer;
 from mMultiThreading import cLock, cThread, cWithCallbacks;
-from mNotProvided import *;
-from mTCPIPConnection import cTransactionalBufferedTCPIPConnection;
+from mNotProvided import \
+    fAssertType, \
+    fbIsProvided, \
+    fxGetFirstProvidedValue, \
+    fxzGetFirstProvidedValueIfAny, \
+    zNotProvided;
 from .mExceptions import *;
 
 # To turn access to data store in multiple variables into a single transaction, we will create locks.
@@ -725,7 +729,6 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       oSelf.fFireCallbacks(
         "connection between client and server intercepted",
         oConnectionFromClient = oConnectionFromClient,
-        oConnectionToServer = oConnectionToServer,
         oServerURL = oServerURL,
       );
       while not oSelf.__bStopping and oConnectionFromClient.bConnected:

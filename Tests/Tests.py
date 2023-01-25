@@ -41,7 +41,6 @@ try:
   import os, sys;
   
   import mHTTPProxy, mHTTPClient, mHTTPProtocol;
-  from mMultiThreading import cLock;
   
   try:
     import mSSL as m0SSL;
