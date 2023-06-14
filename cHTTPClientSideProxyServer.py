@@ -8,10 +8,10 @@ except ModuleNotFoundError as oException:
   ShowDebugOutput = lambda fx: fx; # NOP
   fShowDebugOutput = lambda x, s0 = None: x; # NOP
 
-from mHTTPConnection import cHTTPConnection, cHTTPResponse, cHTTPHeaders, cURL;
+from mHTTPConnection import cHTTPResponse, cHTTPHeaders, cURL;
 from mHTTPServer import cHTTPServer;
 from mHTTPClient import cHTTPClient, cHTTPClientUsingProxyServer, cHTTPClientUsingAutomaticProxyServer;
-from mMultiThreading import cLock, cThread, cWithCallbacks;
+from mMultiThreading import cLock, cWithCallbacks;
 from mNotProvided import \
     fAssertType, \
     fbIsProvided, \
@@ -79,7 +79,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     n0zSecureTimeoutInSeconds = zNotProvided,
     n0zTransactionTimeoutInSeconds = zNotProvided,
     bVerifyCertificates = True,
-    bCheckHostname = True,
+    bzCheckHostname = zNotProvided,
     n0zSecureConnectionPipeTotalDurationTimeoutInSeconds = zNotProvided,
     n0zSecureConnectionPipeIdleTimeoutInSeconds = zNotProvided,
     u0zMaxNumberOfConnectionsToServer = zNotProvided,
@@ -90,7 +90,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     oSelf.__n0zSecureTimeoutInSeconds = fxzGetFirstProvidedValueIfAny(n0zSecureTimeoutInSeconds, oSelf.n0DefaultSecureTimeoutInSeconds);
     oSelf.__n0zTransactionTimeoutInSeconds = fxzGetFirstProvidedValueIfAny(n0zTransactionTimeoutInSeconds, oSelf.n0DefaultTransactionTimeoutInSeconds);
     oSelf.__bVerifyCertificates = bVerifyCertificates;
-    oSelf.__bCheckHostname = bCheckHostname;
+    oSelf.__bzCheckHostname = bzCheckHostname;
     oSelf.__n0SecureConnectionPipeTotalDurationTimeoutInSeconds = fxGetFirstProvidedValue( \
         n0zSecureConnectionPipeTotalDurationTimeoutInSeconds, oSelf.n0DefaultSecureConnectionPipeTotalDurationTimeoutInSeconds);
     oSelf.__n0SecureConnectionPipeIdleTimeoutInSeconds = fxGetFirstProvidedValue( \
@@ -102,7 +102,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       n0DeadlockTimeoutInSeconds = gnDeadlockTimeoutInSeconds
     );
     oSelf.__aoSecureConnectionsFromClient = [];
-    oSelf.__aoSecureConnectionThreads = [];
+    oSelf.__aoSecureConnectionsToServer = [];
     
     oSelf.__bStopping = False;
     oSelf.__oTerminatedLock = cLock(
@@ -162,7 +162,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           n0zSecureConnectionToServerTimeoutInSeconds = oSelf.__n0zSecureTimeoutInSeconds,
           n0zTransactionTimeoutInSeconds = oSelf.__n0zTransactionTimeoutInSeconds,
           bVerifyCertificates = bVerifyCertificates,
-          bCheckHostname = bCheckHostname,
+          bzCheckHostname = bzCheckHostname,
         );
       else:
         oSelf.__oClient = cHTTPClientUsingAutomaticProxyServer(
@@ -180,7 +180,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
               n0zSecureConnectionToChainedProxyTimeoutInSeconds, oSelf.n0DefaultSecureConnectionToChainedProxyTimeoutInSeconds),
           n0zSecureConnectionToServerTimeoutInSeconds = oSelf.__n0zSecureTimeoutInSeconds,
           bVerifyCertificates = bVerifyCertificates,
-          bCheckHostname = bCheckHostname,
+          bzCheckHostname = bzCheckHostname,
         );
     else:
       assert o0ChainedProxyURL is None, \
@@ -194,7 +194,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         n0zSecureTimeoutInSeconds = oSelf.__n0zSecureTimeoutInSeconds,
         n0zTransactionTimeoutInSeconds = oSelf.__n0zTransactionTimeoutInSeconds,
         bVerifyCertificates = bVerifyCertificates,
-        bCheckHostname = bCheckHostname,
+        bzCheckHostname = bzCheckHostname,
       );
     oSelf.__oServer = cHTTPServer(
       ftxRequestHandler = oSelf.__ftxRequestHandler,
@@ -415,9 +415,9 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       if not oSelf.__oClient.bTerminated:
         return fShowDebugOutput("Not terminated: client still running.");
       if oSelf.__aoSecureConnectionsFromClient:
-        return fShowDebugOutput("Not terminated: %d open connections." % len(oSelf.__aoSecureConnectionsFromClient));
-      if oSelf.__aoSecureConnectionThreads:
-        return fShowDebugOutput("Not terminated: %d running thread." % len(oSelf.__aoSecureConnectionThreads));
+        return fShowDebugOutput("Not terminated: %d open secure connections from clients." % len(oSelf.__aoSecureConnectionsFromClient));
+      if oSelf.__aoSecureConnectionsToServer:
+        return fShowDebugOutput("Not terminated: %d open secure connections to servers." % len(oSelf.__aoSecureConnectionsToServer));
       oSelf.__oTerminatedLock.fRelease();
     finally:
       oSelf.__oPropertyAccessTransactionLock.fRelease();
@@ -441,18 +441,26 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
   @ShowDebugOutput
   def fStop(oSelf):
     oSelf.__bStopping = True;
+    # Stop accepting new connections
     fShowDebugOutput("Stopping HTTP server...");
     oSelf.__oServer.fStop();
-    fShowDebugOutput("Stopping HTTP client...");
-    oSelf.__oClient.fStop();
+    
+    # Stop all piped secure connections. This must be done before stopping the client
+    # as these connections were created by the client and it won't stop until all of
+    # these connections are stopped. If we want the client to stop these connections
+    # must be stopped first.
     oSelf.__oPropertyAccessTransactionLock.fAcquire();
     try:
-      aoSecureConnections = oSelf.__aoSecureConnectionsFromClient[:];
+      aoSecureConnections = oSelf.__aoSecureConnectionsFromClient + oSelf.__aoSecureConnectionsToServer;
     finally:
       oSelf.__oPropertyAccessTransactionLock.fRelease();
     for oSecureConnection in aoSecureConnections:
       fShowDebugOutput("Stopping secure connection %s..." % oSecureConnection);
       oSecureConnection.fStop();
+    
+    # Stop the client
+    fShowDebugOutput("Stopping HTTP client...");
+    oSelf.__oClient.fStop();
   
   @ShowDebugOutput
   def fTerminate(oSelf):
@@ -463,16 +471,18 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     oSelf.__bStopping = True;
     fShowDebugOutput("Terminating HTTP server...");
     oSelf.__oServer.fTerminate();
-    fShowDebugOutput("Terminating HTTP client...");
-    oSelf.__oClient.fTerminate();
+
     oSelf.__oPropertyAccessTransactionLock.fAcquire();
     try:
-      aoSecureConnections = oSelf.__aoSecureConnectionsFromClient[:];
+      aoSecureConnections = oSelf.__aoSecureConnectionsFromClient + oSelf.__aoSecureConnectionsToServer;
     finally:
       oSelf.__oPropertyAccessTransactionLock.fRelease();
     for oSecureConnection in aoSecureConnections:
       fShowDebugOutput("Terminating secure connection %s..." % oSecureConnection);
       oSecureConnection.fTerminate();
+
+    fShowDebugOutput("Terminating HTTP client...");
+    oSelf.__oClient.fTerminate();
   
   @ShowDebugOutput
   def fWait(oSelf):
@@ -481,17 +491,19 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     if oSelf.__oTerminatedLock.bLocked:
       fShowDebugOutput("Waiting for HTTP server...");
       oSelf.__oServer.fWait();
-      fShowDebugOutput("Waiting for HTTP client...");
-      oSelf.__oClient.fWait();
+      
       oSelf.__oPropertyAccessTransactionLock.fAcquire();
       try:
-        aoSecureConnectionThreads = oSelf.__aoSecureConnectionThreads[:];
+        aoSecureConnections = oSelf.__aoSecureConnectionsFromClient + oSelf.__aoSecureConnectionsToServer;
       finally:
         oSelf.__oPropertyAccessTransactionLock.fRelease();
-      for oSecureConnectionThread in aoSecureConnectionThreads:
-        fShowDebugOutput("Waiting for secure connection thread %s..." % oSecureConnectionThread);
-        oSecureConnectionThread.fWait();
-  
+      for oSecureConnection in aoSecureConnections:
+        fShowDebugOutput("Waiting for secure connection %s..." % oSecureConnection);
+        oSecureConnection.fWait();
+
+      fShowDebugOutput("Waiting for HTTP client...");
+      oSelf.__oClient.fWait();
+
   @ShowDebugOutput
   def fbWait(oSelf, nTimeoutInSeconds):
     # We could just wait for the termined lock, but while debugging, we may want
@@ -503,37 +515,34 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         fShowDebugOutput("Timeout.");
         return False;
       
+      oSelf.__oPropertyAccessTransactionLock.fAcquire();
+      try:
+        aoSecureConnections = oSelf.__aoSecureConnectionsFromClient + oSelf.__aoSecureConnectionsToServer;
+      finally:
+        oSelf.__oPropertyAccessTransactionLock.fRelease();
+      for oSecureConnection in aoSecureConnections:
+        fShowDebugOutput("Waiting for secure connection %s..." % oSecureConnection);
+        nRemainingTimeoutInSeconds = max(0, nEndTime - time.time());
+        if not oSecureConnection.fbWait(nRemainingTimeoutInSeconds):
+          fShowDebugOutput("Timeout.");
+          return False;
+
       fShowDebugOutput("Waiting for HTTP client...");
-      nRemainingTimeoutInSeconds = nEndTime - time.time();
+      nRemainingTimeoutInSeconds = max(0, nEndTime - time.time());
       if not oSelf.__oClient.fbWait(nRemainingTimeoutInSeconds):
         fShowDebugOutput("Timeout.");
         return False;
       
-      oSelf.__oPropertyAccessTransactionLock.fAcquire();
-      try:
-        aoSecureConnectionThreads = oSelf.__aoSecureConnectionThreads[:];
-      finally:
-        oSelf.__oPropertyAccessTransactionLock.fRelease();
-      for oSecureConnectionThread in aoSecureConnectionThreads:
-        fShowDebugOutput("Waiting for secure connection thread %s..." % oSecureConnectionThread);
-        nRemainingTimeoutInSeconds = nEndTime - time.time();
-        if not oSecureConnectionThread.fbWait(nRemainingTimeoutInSeconds):
-          fShowDebugOutput("Timeout.");
-          return False;
     return True;
   
   @ShowDebugOutput
   def __ftxRequestHandler(oSelf, oServer, oConnection, oRequest, o0SecureConnectionInterceptedForServerURL = None):
-    # Return (o0Respone, bContinueHandlingRequests)
+    # Return (o0Respone, f0NextConnectionHandler)
     
     # Detect and handle CONNECT requests:
-    oResponse = oSelf.__foResponseForConnectRequest(oConnection, oRequest);
-    if oResponse:
-      if oResponse.uStatusCode == 200:
-        fShowDebugOutput("HTTP CONNECT request handled; started forwarding data.");
-        return (oResponse, False);
-      fShowDebugOutput("HTTP CONNECT request failed.");
-      return (oResponse, True);
+    t0xResult = oSelf.__f0txHandleConnectRequest(oConnection, oRequest);
+    if t0xResult:
+      return t0xResult;
     # Detect and handle direct requests from a browser, as if this is a server:
     try:
       oURL = cURL.foFromBytesString(oRequest.sbURL);
@@ -541,33 +550,33 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       if oRequest.sbURL.split(b"://")[0] in [b"http", b"https"]:
         fShowDebugOutput("HTTP request URL (%s) is not valid." % repr(oRequest.sbURL));
         oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL was not valid.");
-        return (oResponse, True);
+        return (oResponse, None);
       oSelf.fFireCallbacks("direct request received from client", oConnection, oRequest);
       if fbIsProvided(oSelf.__fztxDirectRequestHandler):
-        (oResponse, bKeepConnectionOpen) = oSelf.__fztxDirectRequestHandler(oSelf, oConnection, oRequest);
+        (oResponse, f0NextConnectionHandler) = oSelf.__fztxDirectRequestHandler(oSelf, oConnection, oRequest);
       else:
         fShowDebugOutput("HTTP request URL (%s) suggest request was meant for a server, not a proxy." % repr(oRequest.sbURL));
         oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"This is a HTTP proxy, not a HTTP server.");
-        bKeepConnectionOpen = True;
+        f0NextConnectionHandler = None;
       oSelf.fFireCallbacks("direct request received and response sent to client", oConnection, oRequest, oResponse);
-      return (oResponse, bKeepConnectionOpen);
+      return (oResponse, f0NextConnectionHandler);
     ### Sanity checks ##########################################################
     if oRequest.sbMethod.upper() not in [b"CONNECT", b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"TRACE", b"PATCH"]:
       fShowDebugOutput("HTTP request method (%s) is not valid." % repr(oRequest.sbMethod));
       oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The request method was not valid.");
-      return (oResponse, True);
+      return (oResponse, None);
     if o0SecureConnectionInterceptedForServerURL is not None:
       # This request was made to a connection we are intercepting after the client send a HTTP CONNECT request.
       # The URL should be relative:
       if oRequest.sbURL[:1] != b"/":
         fShowDebugOutput("HTTP request URL (%s) does not start with '/'." % repr(oRequest.sbURL));
         oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL was not valid.");
-        return (oResponse, True);
-      oURL = o0SecureConnectionInterceptedForServerURL.foFromRelativeBytesString(oRequest.sbURL, bMustBeRelative = True);
-    oResponse = oSelf.__foResponseForInvalidProxyHeaderInRequest(oRequest)
-    if oResponse:
+        return (oResponse, None);
+      oURL = o0SecureConnectionInterceptedForServerURL.foFromRelativeBytesString(oRequest.sbURL);
+    o0Response = oSelf.__fo0GetResponseForInvalidProxyHeaderInRequest(oRequest)
+    if o0Response:
       fShowDebugOutput("Invalid proxy header.");
-      return (oResponse, True);
+      return (o0Response, None);
     oHeaders = oRequest.oHeaders.foClone();
     # This client does not decide how we handle our connection to the server, so we will overwrite any "Connection"
     # header copied from the request to the proxy with the value we want for the request to the server:
@@ -589,7 +598,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     if oSelf.__o0InterceptSSLConnectionsCertificateAuthority and oHeaders.fbRemoveHeadersForName(b"Strict-Transport-Security"):
       fShowDebugOutput("Filtered HSTS header.");
     try:
-      oResponse = oSelf.__oClient.fo0GetResponseForURL(
+      o0Response = oSelf.__oClient.fo0GetResponseForURL(
         oURL = oURL,
         sbzMethod = oRequest.sbMethod,
         o0zHeaders = oHeaders,
@@ -600,13 +609,14 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     else:
       if oSelf.__bStopping:
         fShowDebugOutput("Stopping.");
-        return None;
-      assert oResponse, \
-          "Expected a response but got %s" % repr(oResponse);
-    return (oResponse, True);
+        return (None, None);
+      assert o0Response, \
+          "Expected a response but got %s" % repr(o0Response);
+      oResponse = o0Response;
+    return (oResponse, None);
   
   @ShowDebugOutput
-  def __foResponseForInvalidProxyHeaderInRequest(oSelf, oRequest):
+  def __fo0GetResponseForInvalidProxyHeaderInRequest(oSelf, oRequest):
     if oRequest.oHeaders.fo0GetUniqueHeaderForName(b"Proxy-Authenticate"):
       oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"This proxy does not require authentication.");
       return oResponse;
@@ -617,7 +627,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     return None;
   
   @ShowDebugOutput
-  def __foResponseForConnectRequest(oSelf, oConnectionFromClient, oRequest):
+  def __f0txHandleConnectRequest(oSelf, oConnectionFromClient, oRequest):
     if oRequest.sbMethod.upper() != b"CONNECT":
       return None;
     
@@ -625,18 +635,27 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     aoHostHeaders = oRequest.oHeaders.faoGetHeadersForName(b"Host");
     if len(aoHostHeaders) == 0:
       fShowDebugOutput("The request has no host header");
-      return foGetErrorResponse(oRequest.sbVersion, 400, b"The request has no host header.");
+      return (
+        foGetErrorResponse(oRequest.sbVersion, 400, b"The request has no host header."),
+        None, # Allow the server to continue handling requests.
+      );
     
     sbLowerHostHeader = aoHostHeaders[0].sbLowerValue;
     for oAdditionalHeader in aoHostHeaders[1:]:
       if oAdditionalHeader.sbLowerValue != sbLowerHostHeader:
         fShowDebugOutput("The request has multiple contradicting host headers");
-        return foGetErrorResponse(oRequest.sbVersion, 400, b"The request has multiple contradicting host headers.");
+        return (
+          foGetErrorResponse(oRequest.sbVersion, 400, b"The request has multiple contradicting host headers."),
+          None, # Allow the server to continue handling requests.
+        );
     
     oHostnamePortMatch = grbHostnamePort.match(oRequest.sbURL);
     if not oHostnamePortMatch:
       fShowDebugOutput("HTTP request URL (%s) does not match 'hostname:port'." % repr(oRequest.sbURL));
-      return foGetErrorResponse(oRequest.sbVersion, 400, b"The request does not provide a valid hostname:port.");
+      return (
+        foGetErrorResponse(oRequest.sbVersion, 400, b"The request does not provide a valid hostname:port."),
+        None, # Allow the server to continue handling requests.
+      );
     
     sbHostname, sbPortNumber = oHostnamePortMatch.groups();
     uPortNumber = int(sbPortNumber);
@@ -648,46 +667,84 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       or u0HostHeaderPortNumber not in (None, uPortNumber)
     ):
       fShowDebugOutput("HTTP request URL (%s) does not match the Host header (%s)." % (repr(oRequest.sbURL), repr(aoHostHeaders[0])));
-      return foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL did not match the 'Host' header.");
+      return (
+        foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL did not match the 'Host' header."),
+        None, # Allow the server to continue handling requests.
+      );
     
     oServerURL = cURL.foFromBytesString(b"https://%s:%d" % (sbHostname, uPortNumber));
-    if oSelf.__o0InterceptSSLConnectionsCertificateAuthority:
-      # We will be intercepting the requests, so we won't make a connection to the server immediately. We will
-      # send a "200 Ok" response and start a thread that will handle the connection, but we will not simply pipe
-      # the data in this thread. Instead the thread will negotiate SSL with the client using a wildcard certificate
-      # and then wait for requests, forward them to the server, receive the response and forward it to the client.
-      fConnectionHandler = oSelf.__fInterceptAndPipeConnection;
-      txConnectionHandlerArguments = (oConnectionFromClient, oServerURL);
-    else:
-      # If we are not intercepting SSL connections, we will try to connect to the server. If this succeeds we will
-      # send a "200 OK" response to the client and start a thread that will pipe data back and forth between the
-      # client and server. We will ask our HTTP client to set up the connection, because the client may be using
-      # a proxy, so we cannot connect directly.
-      try:
-        o0ConnectionToServer = oSelf.__oClient.fo0GetConnectionAndStartTransactionForURL(oServerURL, bDoNotUseSLL = True);
-      except Exception as oException:
-        return oSelf.foGetResponseForException(oException, oRequest.sbVersion);
-      if o0ConnectionToServer is None:
-        # This is probably because we are stopping.
-        return foGetErrorResponse(oRequest.sbVersion, 500, b"Could not connect to server.");
-      oConnectionToServer = o0ConnectionToServer;
-      oConnectionToServer.fEndTransaction(); # We do not need a transaction yet
-      # Create a thread that will pipe data back and forth between the client and server
-      fConnectionHandler = oSelf.__fPipeConnection;
-      # oConnectionFromClient is NOT in a transaction, oConnectionToServer is!!!
-      txConnectionHandlerArguments = (oConnectionFromClient, oConnectionToServer, oServerURL);
-    def fStartConnectionHandlerThread(oConnectionFromClient, oResponse):
-      oThread = cThread(fConnectionHandler, *txConnectionHandlerArguments);
+    bInterceptTraffic = oSelf.__o0InterceptSSLConnectionsCertificateAuthority;
+    try:
+      o0ConnectionToServer = oSelf.__oClient.fo0GetConnectionAndStartTransactionForURL(
+        oServerURL,
+        bSecureConnection = bInterceptTraffic,
+      );
+    except Exception as oException:
+      return (
+        oSelf.foGetResponseForException(oException, oRequest.sbVersion),
+        None, # Allow the server to continue handling requests.
+      );
+    if o0ConnectionToServer is None:
+      # This is probably because we are stopping.
+      return (
+        foGetErrorResponse(oRequest.sbVersion, 500, b"Could not connect to server."),
+        None, # Allow the server to continue handling requests.
+      );
+    oConnectionToServer = o0ConnectionToServer;
+    oConnectionToServer.fEndTransaction(); # We do not need a transaction yet
+    oSelf.__oPropertyAccessTransactionLock.fAcquire();
+    try:
+      oSelf.__aoSecureConnectionsFromClient.append(oConnectionFromClient);
+      oSelf.__aoSecureConnectionsToServer.append(o0ConnectionToServer);
+    finally:
+      oSelf.__oPropertyAccessTransactionLock.fRelease();
+    # Once we are done piping requests, we can forget about the connections:
+    def fCleanupAfterPipingConnection():
+      for oConnection in (oConnectionFromClient, oConnectionToServer):
+        try:
+          oConnection.fStartTransaction();
+          try:
+            oConnection.fDisconnect();
+          finally:
+            oConnection.fEndTransaction();
+        except oConnection.cTCPIPConnectionDisconnectedException:
+          pass;
       oSelf.__oPropertyAccessTransactionLock.fAcquire();
       try:
-        oSelf.__aoSecureConnectionsFromClient.append(oConnectionFromClient);
-        oSelf.__aoSecureConnectionThreads.append(oThread);
+        oSelf.__aoSecureConnectionsToServer.remove(oConnectionToServer);
+        oSelf.__aoSecureConnectionsFromClient.remove(oConnectionFromClient);
       finally:
         oSelf.__oPropertyAccessTransactionLock.fRelease();
-      oThread.fStart(bVital = False);
-    # After our response is sent to the client, we start handling the connection, i.e. piping (intercepted) data
-    # between them.
-    oConnectionFromClient.fAddCallback("response sent", fStartConnectionHandlerThread, bFireOnce = True);
+      oSelf.__fCheckForTermination();
+    if bInterceptTraffic:
+      # We will be intercepting the requests, so we won't make a connection to the server immediately. We will
+      # return a "200 Ok" response and a function that will handle the connection, but we will not simply pipe
+      # the data between client and server. Instead we will negotiate SSL with the client using a wildcard
+      # certificate and create a secure connection to the server ourselves. We will then wait for requests,
+      # which we receive decrypted and forward them re-encrypted to the server, then receive the decrypted
+      # response and forward it encrypted to the client.
+      fNextConnectionHandler = lambda oConnectionFromClient: (
+        oSelf.__fInterceptAndPipeConnection(
+          oConnectionFromClient,
+          oConnectionToServer,
+          oServerURL,
+        ),
+        fCleanupAfterPipingConnection(),
+      );
+    else:
+      # If we are not intercepting SSL connections, we will try to connect to the server. If this succeeds we will
+      # return a "200 OK" response and a function that that will pipe data back and forth between the client and
+      # server. This traffic is encrypted, and we cannot decode it. We will ask our HTTP client to set up this
+      # connection, because the client may be using a proxy, so we cannot connect directly ourselves.
+      # Create a thread that will pipe data back and forth between the client and server
+      fNextConnectionHandler = lambda oConnectionFromClient: (
+        oSelf.__fPipeConnection(
+          oConnectionFromClient,
+          oConnectionToServer,
+          oServerURL
+        ),
+        fCleanupAfterPipingConnection(),
+      );
     # Send a reponse to the client.
     oResponse = cHTTPResponse(
       sbzVersion = oRequest.sbVersion,
@@ -700,13 +757,13 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       sb0Body = b"Connected to remote server.",
       bAutomaticallyAddContentLengthHeader = True,
     );
-    return oResponse;
+    return (oResponse, fNextConnectionHandler);
   
   @ShowDebugOutput
-  def __fInterceptAndPipeConnection(oSelf, oConnectionFromClient, oServerURL):
+  def __fInterceptAndPipeConnection(oSelf, oConnectionFromClient, oConnectionToServer, oServerURL):
     n0TotalDurationEndTime = (
-      time.time() + oSelf.__n0zSecureConnectionPipeTotalDurationTimeoutInSeconds
-      if fbProvided(oSelf.__n0zSecureConnectionPipeTotalDurationTimeoutInSeconds)
+      time.time() + oSelf.__n0SecureConnectionPipeTotalDurationTimeoutInSeconds
+      if oSelf.__n0SecureConnectionPipeTotalDurationTimeoutInSeconds is not None
       else None
     );
     # When intercepting a supposedly secure connection, we will wait for the client to make requests through the
@@ -714,17 +771,16 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     # send the response back to the client.
     fShowDebugOutput("Intercepting secure connection for client %s to server %s." % (oConnectionFromClient, repr(oServerURL.sbBase)));
     fShowDebugOutput("Generating SSL certificate for %s..." % repr(oServerURL.sbHostname));
-    oSSLContext = oSelf.__o0InterceptSSLConnectionsCertificateAuthority.foGenerateserverSideSSLContextForHostname(
+    oSSLContext = oSelf.__o0InterceptSSLConnectionsCertificateAuthority.foGenerateServersideSSLContextForHostname(
       oServerURL.sbHostname,
     );
-    bEndTransaction = False;
     try:
       fShowDebugOutput("Negotiating security for %s..." % oConnectionFromClient);
       sWhile = "Negotiating security for %s" % oConnectionFromClient;
       oConnectionFromClient.fSecure(
         oSSLContext,
-        bCheckHostname = oSelf.__bCheckHostname,
-        n0zTimeoutInSeconds = oSelf.__n0zSecureConnectionPipeTotalDurationTimeoutInSeconds,
+        bzCheckHostname = oSelf.__bzCheckHostname,
+        n0zTimeoutInSeconds = oSelf.__n0SecureConnectionPipeTotalDurationTimeoutInSeconds,
       );
       oSelf.fFireCallbacks(
         "connection between client and server intercepted",
@@ -739,42 +795,47 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
             break;
         else:
           n0TotalDurationRemainingTimeoutInSeconds = None;
-        fShowDebugOutput("Reading request from %s..." % oConnectionFromClient);
-        sWhile = "reading request from %s" % oConnectionFromClient;
+        # Receive the request from the client
+        fShowDebugOutput("Receive request from %s..." % oConnectionFromClient);
         anProvidedTimeoutsInSeconds = [
             n0TimeoutInSeconds
             for n0TimeoutInSeconds in (n0TotalDurationRemainingTimeoutInSeconds, oSelf.__n0SecureConnectionPipeIdleTimeoutInSeconds)
             if n0TimeoutInSeconds is not None
         ];
-        oRequest = oConnectionFromClient.foReceiveRequest(
-          n0TransactionTimeoutInSeconds = min(anProvidedTimeoutsInSeconds) if len(anProvidedTimeoutsInSeconds) > 0 else None,
+        oConnectionFromClient.fStartTransaction(
+          n0TimeoutInSeconds = max(0, min(anProvidedTimeoutsInSeconds)) if len(anProvidedTimeoutsInSeconds) > 0 else None,
         );
-        bEndTransaction = True;
-        if oSelf.__bStopping:
-          fShowDebugOutput("Stopping...");
-          break;
-        assert oRequest, \
-            "No request!?";
-        sWhile = None;
-        (oResponse, bContinueHandlingRequests) = oSelf.__ftxRequestHandler(
-          oServer = None, # Intercepted requests were not received by our HTTP server.
-          oConnection = oConnectionFromClient,
-          oRequest = oRequest,
-          o0SecureConnectionInterceptedForServerURL = oServerURL
-        );
-        if oSelf.__bStopping:
-          fShowDebugOutput("Stopping...");
-          break;
-        assert oResponse, \
-            "No response!?";
-        sWhile = "sending response to %s" % oConnectionFromClient;
-        # Send the response to the client
-        fShowDebugOutput("Sending response (%s) to %s..." % (oResponse, oConnectionFromClient));
-        oConnectionFromClient.fSendResponse(oResponse);
-        bEndTransaction = False;
+        try:
+          try:
+            oRequest = oConnectionFromClient.foReceiveRequest();
+          except oConnectionFromClient.cTCPIPDataTimeoutException:
+            break;
+          if oSelf.__bStopping:
+            fShowDebugOutput("Stopping...");
+            break;
+          # Send the request to the server - no timeout: we want to behave exactly like
+          # the server.
+          oConnectionToServer.fStartTransaction();
+          try:
+            fShowDebugOutput("Sending request (%s) to %s..." % (oRequest, oConnectionToServer));
+            oConnectionToServer.fSendRequest(oRequest);
+            if oSelf.__bStopping:
+              fShowDebugOutput("Stopping...");
+              break;
+            # Receive the response from the client
+            fShowDebugOutput("Receive response from %s..." % oConnectionToServer);
+            oResponse = oConnectionToServer.foReceiveResponse();
+            if oSelf.__bStopping:
+              fShowDebugOutput("Stopping...");
+              break;
+          finally:
+            oConnectionToServer.fEndTransaction();
+          # Send the response to the client
+          fShowDebugOutput("Sending response (%s) to %s..." % (oResponse, oConnectionFromClient));
+          oConnectionFromClient.fSendResponse(oResponse);
+        finally:
+          oConnectionFromClient.fEndTransaction();
         oSelf.fFireCallbacks("response sent to client", oRequest, oResponse);
-        if not bContinueHandlingRequests:
-          break;
     except Exception as oException:
       if sWhile is None: raise; # Exception thrown during __ftxRequestHandler call!?
       if oSelf.bSSLIsSupported and isinstance(oException, oSelf.cSSLException):
@@ -786,24 +847,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       else:
         raise;
     finally:
-      if bEndTransaction: oConnectionFromClient.fEndTransaction();
       fShowDebugOutput("Stopped intercepting secure connection for client %s to server %s." % (oConnectionFromClient, repr(oServerURL.sbBase)));
-      if oConnectionFromClient.bConnected:
-        try:
-          oConnectionFromClient.fStartTransaction();
-          try:
-            oConnectionFromClient.fDisconnect();
-          finally:
-            oConnectionFromClient.fEndTransaction();
-        except oSelf.cTCPIPConnectionDisconnectedException:
-          pass;
-      oSelf.__oPropertyAccessTransactionLock.fAcquire();
-      try:
-        oSelf.__aoSecureConnectionsFromClient.remove(oConnectionFromClient);
-        oSelf.__aoSecureConnectionThreads.remove(cThread.foGetCurrent());
-      finally:
-        oSelf.__oPropertyAccessTransactionLock.fRelease();
-      oSelf.__fCheckForTermination();
   
   @ShowDebugOutput
   def __fPipeConnection(oSelf, oConnectionFromClient, oConnectionToServer, oServerURL):
@@ -850,7 +894,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         s0HandleExceptionsWhile = "waiting for readable bytes from client or server";
         aoConnectionsWithDataToPipe = oConnectionFromClient.__class__.faoWaitUntilBytesAreAvailableForReadingAndStartTransactions(
           [oConnection for oConnection in [oConnectionFromClient, oConnectionToServer] if oConnection.bShouldAllowReading], 
-          n0WaitTimeoutInSeconds = min(anProvidedTimeoutsInSeconds) if len(anProvidedTimeoutsInSeconds) > 0 else None,
+          n0WaitTimeoutInSeconds = max(0, min(anProvidedTimeoutsInSeconds)) if len(anProvidedTimeoutsInSeconds) > 0 else None,
         );
         s0HandleExceptionsWhile = None;
         if len(aoConnectionsWithDataToPipe) == 0:
@@ -906,38 +950,12 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     except oSelf.cTCPIPConnectionDisconnectedException:
       if s0HandleExceptionsWhile is None: raise; # Exception thrown during __ftxRequestHandler call!?
       fShowDebugOutput("Disconnected while %s." % s0HandleExceptionsWhile);
-    fShowDebugOutput("Stopped piping secure connection for client %s to server %s." % (oConnectionFromClient, repr(oServerURL.sbBase)));
-    if oConnectionFromClient.bConnected:
-      try:
-        if not bClientInTransactions:
-          oConnectionFromClient.fStartTransaction();
-        try:
-          oConnectionFromClient.fDisconnect();
-        finally:
-          oConnectionFromClient.fEndTransaction();
-      except oSelf.cTCPIPConnectionDisconnectedException:
-        pass;
-    elif bClientInTransactions:
-      oConnectionFromClient.fEndTransaction();
-    if oConnectionToServer.bConnected:
-      try:
-        if not bServerInTransactions:
-          oConnectionToServer.fStartTransaction();
-        try:
-          oConnectionToServer.fDisconnect();
-        finally:
-          oConnectionToServer.fEndTransaction();
-      except oSelf.cTCPIPConnectionDisconnectedException:
-        pass;
-    elif bServerInTransactions:
-      oConnectionToServer.fEndTransaction();
-    oSelf.__oPropertyAccessTransactionLock.fAcquire();
-    try:
-      oSelf.__aoSecureConnectionsFromClient.remove(oConnectionFromClient);
-      oSelf.__aoSecureConnectionThreads.remove(cThread.foGetCurrent());
     finally:
-      oSelf.__oPropertyAccessTransactionLock.fRelease();
-    oSelf.__fCheckForTermination();
+      if bClientInTransactions:
+        oConnectionFromClient.fEndTransaction();
+      if bServerInTransactions:
+        oConnectionToServer.fEndTransaction();
+      fShowDebugOutput("Stopped piping secure connection for client %s to server %s." % (oConnectionFromClient, repr(oServerURL.sbBase)));
   
   def fasGetDetails(oSelf):
     # This is done without a property lock, so race-conditions exist and it
@@ -945,11 +963,9 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     if oSelf.bTerminated:
       return ["terminated"];
     uSecureConnections = len(oSelf.__aoSecureConnectionsFromClient);
-    uSecureConnectionThreads = len(oSelf.__aoSecureConnectionThreads);
     return [s for s in [
       "%s => %s" % (oSelf.__oServer, oSelf.__oClient),
       "%s secure connections" % (uSecureConnections or "no"),
-      "%s threads" % (uSecureConnectionThreads or "no"),
       "terminated" if oSelf.bTerminated else \
           "stopping" if oSelf.__bStopping else None,
     ] if s];

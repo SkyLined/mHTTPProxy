@@ -1,11 +1,13 @@
 import socket, threading;
 
 from mConsole  import oConsole;
-from mHTTPClient import *;
-from mHTTPClient.mExceptions import *;
+from mHTTPConnection import \
+    cHTTPConnection, \
+    cURL;
 from mMultiThreading import cThread;
 
-NORMAL =            0x0F07; # Light gray
+NORMAL =            0x0F07; # Light grey
+DIM  =              0x0F08; # Dark grey
 INFO =              0x0F0F; # Bright white
 OK =                0x0F0A; # Bright green
 ERROR =             0x0F0C; # Bright red
@@ -19,6 +21,7 @@ def foGetServerURL(sNote):
 
 oTestURL = cURL.foFromBytesString(b"http://example.com");
 oSecureTestURL = cURL.foFromBytesString(b"https://example.com");
+oRedirectToSecureTestURL = cURL.foFromBytesString(b"http://skylined.nl");
 oUnknownHostnameURL = cURL.foFromBytesString(b"http://does.not.exist.example.com/unknown-hostname");
 oInvalidAddressURL = cURL.foFromBytesString(b"http://0.0.0.0/invalid-address");
 oConnectionRefusedURL = foGetServerURL(b"refuse-connection");
@@ -36,7 +39,7 @@ def fTestClient(
 ):
   oServersShouldBeRunningLock = threading.Lock();
   oServersShouldBeRunningLock.acquire(); # Released once servers should stop runnning.
-  oConsole.fOutput("\u2500\u2500\u2500\u2500 Making a first test request to %s " % oTestURL, sPadding = "\u2500");
+  oConsole.fOutput(INFO, "\u2500\u2500\u2500\u2500 Making a first test request to %s " % oTestURL, sPadding = "\u2500");
   (oRequest, o0Response) = oHTTPClient.fto0GetRequestAndResponseForURL(oTestURL);
   assert o0Response, \
       "No response!?";
@@ -79,8 +82,12 @@ def fTestClient(
   oProxyServerURLForSecureTestURL = oHTTPClient.fo0GetProxyServerURLForURL(oSecureTestURL);
   # If we are not using a proxy, or the URL for the proxy server is not secure,
   # we can test a secure connection to the server, if we have a certificate store.
-  if (not oProxyServerURLForSecureTestURL or not oProxyServerURLForSecureTestURL.bSecure) and o0CertificateStore:
-    oConsole.fOutput("\u2500\u2500\u2500\u2500 Making a first test request to %s " % oSecureTestURL, sPadding = "\u2500");
+  if False: # oProxyServerURLForSecureTestURL and oProxyServerURLForSecureTestURL.bSecure:
+    oConsole.fOutput(ERROR, "*** Cannot test secure connections through secure proxy at ", str(oProxyServerURLForSecureTestURL));
+  elif not o0CertificateStore:
+    oConsole.fOutput(ERROR, "*** Cannot test secure connections without a certificate store!");
+  else:
+    oConsole.fOutput(INFO, "\u2500\u2500\u2500\u2500 Making a first test request to %s " % oSecureTestURL, sPadding = "\u2500");
     (oRequest, o0Response) = oHTTPClient.fto0GetRequestAndResponseForURL(oSecureTestURL);
     assert o0Response, \
         "No response!?";
@@ -127,7 +134,27 @@ def fTestClient(
         for (sbProtocolHostPort, oSecureConnection) in doSecureConnectionToServerThroughProxy_by_sbProtocolHostPort.items():
           print("* %S => %s" % (sbProtocolHostPort, repr(oSecureConnection)));
         raise AssertionError();
-  
+    ###
+    ### Test redirecting
+    ###
+    oConsole.fOutput(INFO, "\u2500\u2500\u2500\u2500 Making a test request without following redirects to %s " % oRedirectToSecureTestURL, sPadding = "\u2500");
+    (oRequest, o0Response) = oHTTPClient.fto0GetRequestAndResponseForURL(oRedirectToSecureTestURL);
+    assert o0Response, \
+        "No response!?";
+    oResponse = o0Response;
+    oConsole.fOutput("  oRequest = %s" % oRequest);
+    oConsole.fOutput("  oResponse = %s" % oResponse);
+    oConsole.fOutput("\u2500\u2500\u2500\u2500 Making a test request and follow redirects to %s " % oRedirectToSecureTestURL, sPadding = "\u2500");
+    (oRequest, o0Response) = oHTTPClient.fto0GetRequestAndResponseForURL(
+      oRedirectToSecureTestURL,
+      uMaximumNumberOfRedirectsToFollow = 5,
+    );
+    assert o0Response, \
+        "No response!?";
+    oResponse = o0Response;
+    oConsole.fOutput("  oRequest = %s" % oRequest);
+    oConsole.fOutput("  oResponse = %s" % oResponse);
+    
   # Create a server on a socket but do not listen so connections are refused.
   oConnectionRefusedServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
   oConnectionRefusedServerSocket.bind((oConnectionRefusedURL.sbHostname, oConnectionRefusedURL.uPortNumber));
@@ -139,11 +166,11 @@ def fTestClient(
   oResponse = cHTTPConnection.foCreateResponse(s0Data = "Hello, world!");
   def fOutOfBandDataServerThread():
     (oClientSocket, (sClientIP, uClientPortNumber)) = oOutOfBandDataServerSocket.accept();
-    oConsole.fOutput("Out-of-band data server receiving request...");
+    oConsole.fOutput(DIM, "  > Out-of-band data server receiving request...");
     oClientSocket.recv(0x1000);
-    oConsole.fOutput("Out-of-band data server sending valid response with out-of-band data...");
+    oConsole.fOutput(DIM, "  > Out-of-band data server sending valid response with out-of-band data...");
     oClientSocket.send(oResponse.fsbSerialize() + b"X");
-    oConsole.fOutput("Out-of-band data server thread terminated.");
+    oConsole.fOutput(DIM, "  > Out-of-band data server thread terminated.");
     oClientSocket.close();
   
   oOutOfBandDataServerThread = cThread(fOutOfBandDataServerThread);
@@ -155,9 +182,9 @@ def fTestClient(
   oConnectionDisconnectedServerSocket.listen(1);
   def fConnectionDisconnectedServerThread():
     (oClientSocket, (sClientIP, uClientPortNumber)) = oConnectionDisconnectedServerSocket.accept();
-    oConsole.fOutput("Disconnect server is disconnecting the connection...");
+    oConsole.fOutput(DIM, "  > Disconnect server is disconnecting the connection...");
     oClientSocket.close();
-    oConsole.fOutput("Disconnect server thread terminated.");
+    oConsole.fOutput(DIM, "  > Disconnect server thread terminated.");
     
   oConnectionDisconnectedServerThread = cThread(fConnectionDisconnectedServerThread);
   oConnectionDisconnectedServerThread.fStart(bVital = False);
@@ -168,12 +195,12 @@ def fTestClient(
   oConnectionShutdownServerSocket.listen(1);
   def fConnectionShutdownServerThread():
     (oClientSocket, (sClientIP, uClientPortNumber)) = oConnectionShutdownServerSocket.accept();
-    oConsole.fOutput("Shutdown server is shutting down the connection for writing...");
+    oConsole.fOutput(DIM, "  > Shutdown server is shutting down the connection for writing...");
     oClientSocket.shutdown(socket.SHUT_WR);
-    oConsole.fOutput("Shutdown server is sleeping to keep the connection open....");
+    oConsole.fOutput(DIM, "  > Shutdown server is sleeping to keep the connection open....");
     oServersShouldBeRunningLock.acquire();
     oServersShouldBeRunningLock.release();
-    oConsole.fOutput("Shutdown server thread terminated.");
+    oConsole.fOutput(DIM, "  > Shutdown server thread terminated.");
     
   oConnectionShutdownServerThread = cThread(fConnectionShutdownServerThread);
   oConnectionShutdownServerThread.fStart(bVital = False);
@@ -184,12 +211,12 @@ def fTestClient(
   oResponseTimeoutServerSocket.listen(1);
   def fResponseTimeoutServerThread():
     (oClientSocket, (sClientIP, uClientPortNumber)) = oResponseTimeoutServerSocket.accept();
-    oConsole.fOutput("Response timeout server receiving request...");
+    oConsole.fOutput(DIM, "  > Response timeout server receiving request...");
     oClientSocket.recv(0x1000);
-    oConsole.fOutput("Response timeout server is sleeping to avoid sending a response...");
+    oConsole.fOutput(DIM, "  > Response timeout server is sleeping to avoid sending a response...");
     oServersShouldBeRunningLock.acquire();
     oServersShouldBeRunningLock.release();
-    oConsole.fOutput("Response timeout thread terminated.");
+    oConsole.fOutput(DIM, "  > Response timeout thread terminated.");
     
   oResponseTimeoutServerThread = cThread(fResponseTimeoutServerThread);
   oResponseTimeoutServerThread.fStart(bVital = False);
@@ -201,44 +228,78 @@ def fTestClient(
   sbInvalidResponse = b"Hello, world!\r\n";
   def fInvalidHTTPMessageServerThread():
     (oClientSocket, (sClientIP, uClientPortNumber)) = oInvalidHTTPMessageServerSocket.accept();
-    oConsole.fOutput("Invalid HTTP Message server received request; sending invalid response...");
+    oConsole.fOutput(DIM, "  > Invalid HTTP Message server received request; sending invalid response...");
     oClientSocket.recv(0x1000); # This should cover the request, which we discard.
     oClientSocket.send(sbInvalidResponse);
-    oConsole.fOutput("Invalid HTTP Message server thread terminated.");
+    oConsole.fOutput(DIM, "  > Invalid HTTP Message server thread terminated.");
   
   oInvalidHTTPMessageServerThread = cThread(fInvalidHTTPMessageServerThread);
   oInvalidHTTPMessageServerThread.fStart(bVital = False);
   
-  for (uNumberOfRequests, oURL, cExpectedExceptionClass, acAcceptableExceptionClasses, auAcceptableStatusCodes) in (
-    (1, oUnknownHostnameURL,
-        cTCPIPDNSUnknownHostnameException, [],
-        [400]),
-    (1, oInvalidAddressURL,
-        cTCPIPInvalidAddressException, [],
-        [400]),
-    (1, oConnectionRefusedURL,
-        cTCPIPConnectionRefusedException, [cTCPIPConnectTimeoutException],
-        [502]),
-    (1, oConnectTimeoutURL,
-        cTCPIPConnectTimeoutException, [],
-        [502, 504]),
-    (1, oConnectionDisconnectedURL,
-        cTCPIPConnectionDisconnectedException, [cTCPIPConnectionShutdownException],
-        [502]),
-    (1, oConnectionShutdownURL,
-        cTCPIPConnectionShutdownException, [],
-        [502]),
-    (1, oResponseTimeoutURL,
-        cTCPIPDataTimeoutException, [],
-        [504]),
-    (2, oOutOfBandDataURL,
-        cHTTPOutOfBandDataException, [],
-        [502]),
-    (1, oInvalidHTTPMessageURL,
-        cHTTPInvalidMessageException, [],
-        [502]),
+  for (
+    uNumberOfRequests,
+    oURL,
+    cExpectedExceptionClass,
+    acAcceptableExceptionClasses,
+    auAcceptableStatusCodes,
+  ) in (
+    (
+      1,
+      oUnknownHostnameURL,
+      cHTTPConnection.cTCPIPDNSUnknownHostnameException,
+      [],
+      [400],
+    ), (
+      1,
+      oInvalidAddressURL,
+      cHTTPConnection.cTCPIPInvalidAddressException,
+      [],
+      [400],
+    ), (
+      1,
+      oConnectionRefusedURL,
+      cHTTPConnection.cTCPIPConnectionRefusedException,
+      [cHTTPConnection.cTCPIPConnectTimeoutException],
+      [502],
+    ), (
+      1,
+      oConnectTimeoutURL,
+      cHTTPConnection.cTCPIPConnectTimeoutException,
+      [],
+      [502, 504],
+    ), (
+      1,
+      oConnectionDisconnectedURL,
+      cHTTPConnection.cTCPIPConnectionDisconnectedException,
+      [cHTTPConnection.cTCPIPConnectionShutdownException],
+      [502],
+    ), (
+      1,
+      oConnectionShutdownURL,
+      cHTTPConnection.cTCPIPConnectionShutdownException,
+      [],
+      [502],
+    ), (
+      1,
+      oResponseTimeoutURL,
+      cHTTPConnection.cTCPIPDataTimeoutException,
+      [],
+      [504],
+    ), (
+      2,
+      oOutOfBandDataURL,
+      cHTTPConnection.cHTTPOutOfBandDataException,
+      [],
+      [502],
+    ), (
+      1,
+      oInvalidHTTPMessageURL,
+      cHTTPConnection.cHTTPInvalidMessageException,
+      [],
+      [502],
+    ),
   ):
-    oConsole.fOutput("\u2500\u2500\u2500\u2500 Making a test request to %s " % oURL, sPadding = "\u2500");
+    oConsole.fOutput(INFO, "\u2500\u2500\u2500\u2500 Making a test request to %s " % oURL, sPadding = "\u2500");
     if oHTTPClient.__class__.__name__ == "cHTTPClient":
       oConsole.fStatus("  * Expecting %s exception..." % cExpectedExceptionClass.__name__);
       auAcceptableStatusCodes = None;
@@ -287,6 +348,7 @@ def fTestClient(
   
   # Allow server threads to stop.
   oServersShouldBeRunningLock.release();
+  oConsole.fOutput(INFO, "\u2500\u2500\u2500\u2500 Cleaning up ", sPadding = "\u2500");
   
   oConsole.fOutput("\u2500\u2500\u2500\u2500 Stopping HTTP Client ", sPadding = "\u2500");
   oHTTPClient.fStop();

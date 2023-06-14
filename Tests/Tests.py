@@ -142,7 +142,7 @@ try:
     oConsole.fOutput("  oCertificateStore = %s" % oCertificateStore);
   
   oConsole.fOutput(HEADER, "\u2500\u2500\u2500\u2500 Test HTTP client and proxy server. ", sPadding = "\u2500");
-  fTestProxyClientAndServer(oProxyServerURL, None, None, nEndWaitTimeoutInSeconds, f0LogEvents);
+  fTestProxyClientAndServer(oProxyServerURL, oCertificateStore, None, nEndWaitTimeoutInSeconds, f0LogEvents);
   if m0SSL:
     oConsole.fOutput(HEADER, "\u2500\u2500\u2500\u2500 Test HTTP client and proxy server with intercepted HTTPS connections ", sPadding = "\u2500");
     fTestProxyClientAndServer(oSecureProxyServerURL, oCertificateStore, oCertificateAuthority, nEndWaitTimeoutInSeconds, f0LogEvents);
