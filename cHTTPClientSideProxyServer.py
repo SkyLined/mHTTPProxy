@@ -46,7 +46,6 @@ def foGetErrorResponse(sbVersion, uStatusCode, sbBody):
       b"Content-Type": b"text/plain",
     }),
     sb0Body = sbBody,
-    bAutomaticallyAddContentLengthHeader = True,
   );
 
 class cHTTPClientSideProxyServer(cWithCallbacks):
@@ -755,7 +754,6 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         b"Content-type": b"text/plain",
       }),
       sb0Body = b"Connected to remote server.",
-      bAutomaticallyAddContentLengthHeader = True,
     );
     return (oResponse, fNextConnectionHandler);
   
