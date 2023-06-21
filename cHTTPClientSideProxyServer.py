@@ -699,15 +699,6 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       oSelf.__oPropertyAccessTransactionLock.fRelease();
     # Once we are done piping requests, we can forget about the connections:
     def fCleanupAfterPipingConnection():
-      for oConnection in (oConnectionFromClient, oConnectionToServer):
-        try:
-          oConnection.fStartTransaction();
-          try:
-            oConnection.fDisconnect();
-          finally:
-            oConnection.fEndTransaction();
-        except oConnection.cTCPIPConnectionDisconnectedException:
-          pass;
       oSelf.__oPropertyAccessTransactionLock.fAcquire();
       try:
         oSelf.__aoSecureConnectionsToServer.remove(oConnectionToServer);
@@ -866,8 +857,6 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     );
     fShowDebugOutput("Piping secure connection for client (%s) to server (%s, url = %s)." % \
         (oConnectionFromClient, oConnectionToServer, str(oServerURL.sbBase, "ascii", "strict")));
-    bClientInTransactions = False;
-    bServerInTransactions = False;
     try:
       while not oSelf.__bStopping and oConnectionToServer.bConnected and oConnectionFromClient.bConnected:
         s0HandleExceptionsWhile = None; # Do not handle exceptions.
@@ -906,39 +895,39 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           n0TotalDurationRemainingTimeoutInSeconds = None;
         # We need to start transactions on both connections, not just the ones with readable data.
         # We also need to reset the transaction timeout.
-        bClientInTransactions = oConnectionFromClient in aoConnectionsWithDataToPipe;
-        if bClientInTransactions:
+        s0HandleExceptionsWhile = "starting a transaction on the connection from the client";
+        if oConnectionFromClient in aoConnectionsWithDataToPipe:
           oConnectionFromClient.fRestartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
         else:
           oConnectionFromClient.fStartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
-          bClientInTransactions = True;
-        bServerInTransactions = oConnectionToServer in aoConnectionsWithDataToPipe;
-        if bServerInTransactions:
-          oConnectionToServer.fRestartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
-        else:
-          oConnectionToServer.fStartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
-          bServerInTransactions = True;
-        for oFromConnection in aoConnectionsWithDataToPipe:
-          s0HandleExceptionsWhile = "reading bytes from %s" % ("client" if oFromConnection is oConnectionFromClient else "server");
-          sbBytes = oFromConnection.fsbReadAvailableBytes();
+        s0HandleExceptionsWhile = None;
+        try:
+          s0HandleExceptionsWhile = "starting a transaction on the connection to the server";
+          if oConnectionToServer in aoConnectionsWithDataToPipe:
+            oConnectionToServer.fRestartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
+          else:
+            oConnectionToServer.fStartTransaction(n0TimeoutInSeconds = n0TotalDurationRemainingTimeoutInSeconds);
           s0HandleExceptionsWhile = None;
-          fShowDebugOutput("%s %s=%d bytes=%s %s." % (
-            oConnectionFromClient,
-            "<" if oFromConnection is oConnectionToServer else "",
-            len(sbBytes),
-            ">" if oFromConnection is oConnectionFromClient else "",
-            oConnectionToServer,
-          ));
-          oToConnection = oConnectionFromClient if oFromConnection is oConnectionToServer else oConnectionToServer;
-          s0HandleExceptionsWhile = "writing bytes to %s" % ("client" if oToConnection is oConnectionFromClient else "server");
-          oToConnection.fWriteBytes(sbBytes);
-          s0HandleExceptionsWhile = None;
-        if bClientInTransactions:
+          try:
+            for oFromConnection in aoConnectionsWithDataToPipe:
+              s0HandleExceptionsWhile = "reading bytes from %s" % ("client" if oFromConnection is oConnectionFromClient else "server");
+              sbBytes = oFromConnection.fsbReadAvailableBytes();
+              s0HandleExceptionsWhile = None;
+              fShowDebugOutput("%s %s=%d bytes=%s %s." % (
+                oConnectionFromClient,
+                "<" if oFromConnection is oConnectionToServer else "",
+                len(sbBytes),
+                ">" if oFromConnection is oConnectionFromClient else "",
+                oConnectionToServer,
+              ));
+              oToConnection = oConnectionFromClient if oFromConnection is oConnectionToServer else oConnectionToServer;
+              s0HandleExceptionsWhile = "writing bytes to %s" % ("client" if oToConnection is oConnectionFromClient else "server");
+              oToConnection.fWriteBytes(sbBytes);
+              s0HandleExceptionsWhile = None;
+          finally:
+            oConnectionToServer.fEndTransaction();
+        finally:
           oConnectionFromClient.fEndTransaction();
-          bClientInTransactions = False;
-        if bServerInTransactions:
-          oConnectionToServer.fEndTransaction();
-          bServerInTransactions = False;
     except oSelf.cTCPIPDataTimeoutException:
       if s0HandleExceptionsWhile is None: raise; # Exception thrown during __ftxRequestHandler call!?
       fShowDebugOutput("Transaction timeout while %s." % s0HandleExceptionsWhile);
@@ -949,10 +938,6 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       if s0HandleExceptionsWhile is None: raise; # Exception thrown during __ftxRequestHandler call!?
       fShowDebugOutput("Disconnected while %s." % s0HandleExceptionsWhile);
     finally:
-      if bClientInTransactions:
-        oConnectionFromClient.fEndTransaction();
-      if bServerInTransactions:
-        oConnectionToServer.fEndTransaction();
       fShowDebugOutput("Stopped piping secure connection for client %s to server %s." % (oConnectionFromClient, repr(oServerURL.sbBase)));
   
   def fasGetDetails(oSelf):
