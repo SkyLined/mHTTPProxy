@@ -11,7 +11,7 @@ def fTestProxyClientAndServer(
   nEndWaitTimeoutInSeconds,
   f0LogEvents
 ):
-  oConsole.fOutput("\u2500\u2500\u2500\u2500 Creating a cHTTPClientSideProxyServer instance... ", sPadding = "\u2500");
+  oConsole.fOutput("\u2500\u2500\u2500\u2500 Creating a client side HTTP proxy server... ", sPadding = "\u2500");
   oProxyServer = cHTTPClientSideProxyServer(
     sbzHostname = oProxyServerURL.sbHostname,
     uzPortNumber = oProxyServerURL.uPortNumber,
@@ -27,24 +27,25 @@ def fTestProxyClientAndServer(
   );
   if f0LogEvents: f0LogEvents(oProxyServer, "oProxyServer");
   oConsole.fOutput("  oProxyServer = ", str(oProxyServer));
-  oConsole.fOutput("\u2500\u2500\u2500\u2500 Creating a cHTTPClientUsingProxyServer instance... ", sPadding = "\u2500");
+  oConsole.fOutput("\u2500\u2500\u2500\u2500 Creating a HTTP client using this proxy... ", sPadding = "\u2500");
   oHTTPClient = cHTTPClientUsingProxyServer(
     oProxyServerURL = oProxyServerURL,
     bVerifyCertificates = False,
     o0zCertificateStore = o0CertificateStore,
     n0zConnectToProxyTimeoutInSeconds = 1, # Make sure connection attempts time out quickly to trigger a timeout exception.
   );
+  oConsole.fOutput("  oHTTPClient = ", str(oHTTPClient));
   if f0LogEvents: f0LogEvents(oHTTPClient, "oHTTPClient");
   
   oConsole.fOutput("\u2500\u2500\u2500\u2500 Running client tests through proxy server... ", sPadding = "\u2500");
   fTestClient(oHTTPClient, o0CertificateStore, nEndWaitTimeoutInSeconds);
   
-  oConsole.fOutput("\u2500\u2500\u2500\u2500 Stopping cHTTPClientUsingProxyServer instance... ", sPadding = "\u2500");
+  oConsole.fOutput("\u2500\u2500\u2500\u2500 Stopping HTTP client... ", sPadding = "\u2500");
   oHTTPClient.fStop();
   assert oHTTPClient.fbWait(nEndWaitTimeoutInSeconds), \
       "cHTTPClientUsingProxyServer instance did not stop in time";
   
-  oConsole.fOutput("\u2500\u2500\u2500\u2500 Stopping cHTTPClientSideProxyServer instance... ", sPadding = "\u2500");
+  oConsole.fOutput("\u2500\u2500\u2500\u2500 Stopping HTTP proxy... ", sPadding = "\u2500");
   oProxyServer.fStop();
   assert oProxyServer.fbWait(nEndWaitTimeoutInSeconds), \
       "cHTTPClientSideProxyServer instance did not stop in time";
