@@ -100,8 +100,8 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       "%s.__oPropertyAccessTransactionLock" % oSelf.__class__.__name__,
       n0DeadlockTimeoutInSeconds = gnDeadlockTimeoutInSeconds
     );
-    oSelf.__aoSecureConnectionsFromClient = [];
-    oSelf.__aoSecureConnectionsToServer = [];
+    oSelf.__aoConnectionsBeingPipedFromClient = [];
+    oSelf.__aoConnectionsBeingPipedToServer = [];
     
     oSelf.__bStopping = False;
     oSelf.__oTerminatedLock = cLock(
@@ -375,8 +375,6 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       return foGetErrorResponse(sbHTTPVersion, 504, b"Connecting to the server timed out.");
     if isinstance(oException, oSelf.cTCPIPDataTimeoutException):
       return foGetErrorResponse(sbHTTPVersion, 504, b"The server did not respond before the request timed out.");
-    if isinstance(oException, oSelf.cHTTPOutOfBandDataException):
-      return foGetErrorResponse(sbHTTPVersion, 502, b"The server send out-of-band data.");
     if isinstance(oException, oSelf.cTCPIPConnectionRefusedException):
       return foGetErrorResponse(sbHTTPVersion, 502, b"The server did not accept our connection.");
     if isinstance(oException, (oSelf.cTCPIPConnectionShutdownException, oSelf.cTCPIPConnectionDisconnectedException)):
@@ -413,10 +411,10 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         return fShowDebugOutput("Not terminated: server still running.");
       if not oSelf.__oClient.bTerminated:
         return fShowDebugOutput("Not terminated: client still running.");
-      if oSelf.__aoSecureConnectionsFromClient:
-        return fShowDebugOutput("Not terminated: %d open secure connections from clients." % len(oSelf.__aoSecureConnectionsFromClient));
-      if oSelf.__aoSecureConnectionsToServer:
-        return fShowDebugOutput("Not terminated: %d open secure connections to servers." % len(oSelf.__aoSecureConnectionsToServer));
+      if oSelf.__aoConnectionsBeingPipedFromClient:
+        return fShowDebugOutput("Not terminated: %d open secure connections from clients." % len(oSelf.__aoConnectionsBeingPipedFromClient));
+      if oSelf.__aoConnectionsBeingPipedToServer:
+        return fShowDebugOutput("Not terminated: %d open secure connections to servers." % len(oSelf.__aoConnectionsBeingPipedToServer));
       oSelf.__oTerminatedLock.fRelease();
     finally:
       oSelf.__oPropertyAccessTransactionLock.fRelease();
@@ -450,10 +448,10 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     # must be stopped first.
     oSelf.__oPropertyAccessTransactionLock.fAcquire();
     try:
-      aoSecureConnections = oSelf.__aoSecureConnectionsFromClient + oSelf.__aoSecureConnectionsToServer;
+      aoConnectionsBeingPiped = oSelf.__aoConnectionsBeingPipedFromClient + oSelf.__aoConnectionsBeingPipedToServer;
     finally:
       oSelf.__oPropertyAccessTransactionLock.fRelease();
-    for oSecureConnection in aoSecureConnections:
+    for oSecureConnection in aoConnectionsBeingPiped:
       fShowDebugOutput("Stopping secure connection %s..." % oSecureConnection);
       oSecureConnection.fStop();
     
@@ -473,10 +471,10 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
 
     oSelf.__oPropertyAccessTransactionLock.fAcquire();
     try:
-      aoSecureConnections = oSelf.__aoSecureConnectionsFromClient + oSelf.__aoSecureConnectionsToServer;
+      aoConnectionsBeingPiped = oSelf.__aoConnectionsBeingPipedFromClient + oSelf.__aoConnectionsBeingPipedToServer;
     finally:
       oSelf.__oPropertyAccessTransactionLock.fRelease();
-    for oSecureConnection in aoSecureConnections:
+    for oSecureConnection in aoConnectionsBeingPiped:
       fShowDebugOutput("Terminating secure connection %s..." % oSecureConnection);
       oSecureConnection.fTerminate();
 
@@ -493,10 +491,10 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       
       oSelf.__oPropertyAccessTransactionLock.fAcquire();
       try:
-        aoSecureConnections = oSelf.__aoSecureConnectionsFromClient + oSelf.__aoSecureConnectionsToServer;
+        aoConnectionsBeingPiped = oSelf.__aoConnectionsBeingPipedFromClient + oSelf.__aoConnectionsBeingPipedToServer;
       finally:
         oSelf.__oPropertyAccessTransactionLock.fRelease();
-      for oSecureConnection in aoSecureConnections:
+      for oSecureConnection in aoConnectionsBeingPiped:
         fShowDebugOutput("Waiting for secure connection %s..." % oSecureConnection);
         oSecureConnection.fWait();
 
@@ -516,10 +514,10 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       
       oSelf.__oPropertyAccessTransactionLock.fAcquire();
       try:
-        aoSecureConnections = oSelf.__aoSecureConnectionsFromClient + oSelf.__aoSecureConnectionsToServer;
+        aoConnectionsBeingPiped = oSelf.__aoConnectionsBeingPipedFromClient + oSelf.__aoConnectionsBeingPipedToServer;
       finally:
         oSelf.__oPropertyAccessTransactionLock.fRelease();
-      for oSecureConnection in aoSecureConnections:
+      for oSecureConnection in aoConnectionsBeingPiped:
         fShowDebugOutput("Waiting for secure connection %s..." % oSecureConnection);
         nRemainingTimeoutInSeconds = max(0, nEndTime - time.time());
         if not oSecureConnection.fbWait(nRemainingTimeoutInSeconds):
@@ -693,16 +691,27 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     oConnectionToServer.fEndTransaction(); # We do not need a transaction yet
     oSelf.__oPropertyAccessTransactionLock.fAcquire();
     try:
-      oSelf.__aoSecureConnectionsFromClient.append(oConnectionFromClient);
-      oSelf.__aoSecureConnectionsToServer.append(o0ConnectionToServer);
+      oSelf.__aoConnectionsBeingPipedFromClient.append(oConnectionFromClient);
+      oSelf.__aoConnectionsBeingPipedToServer.append(o0ConnectionToServer);
     finally:
       oSelf.__oPropertyAccessTransactionLock.fRelease();
     # Once we are done piping requests, we can forget about the connections:
     def fCleanupAfterPipingConnection():
+      # Disconnect once we're done piping connections.
+      for oConnection in (oConnectionToServer, oConnectionFromClient):
+        try:
+          oConnection.fStartTransaction();
+          try:
+            oConnection.fDisconnect();
+          finally:
+            oConnection.fEndTransaction();
+        except oSelf.cTCPIPConnectionDisconnectedException:
+          pass;
+      # Remove these connections from the list of 
       oSelf.__oPropertyAccessTransactionLock.fAcquire();
       try:
-        oSelf.__aoSecureConnectionsToServer.remove(oConnectionToServer);
-        oSelf.__aoSecureConnectionsFromClient.remove(oConnectionFromClient);
+        oSelf.__aoConnectionsBeingPipedToServer.remove(oConnectionToServer);
+        oSelf.__aoConnectionsBeingPipedFromClient.remove(oConnectionFromClient);
       finally:
         oSelf.__oPropertyAccessTransactionLock.fRelease();
       oSelf.__fCheckForTermination();
@@ -945,10 +954,10 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     # approximates the real values.
     if oSelf.bTerminated:
       return ["terminated"];
-    uSecureConnections = len(oSelf.__aoSecureConnectionsFromClient);
+    uConnectionsBeingPiped = len(oSelf.__aoConnectionsBeingPipedFromClient);
     return [s for s in [
       "%s => %s" % (oSelf.__oServer, oSelf.__oClient),
-      "%s secure connections" % (uSecureConnections or "no"),
+      "%s piped secure connections" % (uConnectionsBeingPiped or "no"),
       "terminated" if oSelf.bTerminated else \
           "stopping" if oSelf.__bStopping else None,
     ] if s];
