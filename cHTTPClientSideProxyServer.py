@@ -628,24 +628,6 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     if oRequest.sbMethod.upper() != b"CONNECT":
       return None;
     
-    # Check the sanity of the request.
-    aoHostHeaders = oRequest.oHeaders.faoGetHeadersForName(b"Host");
-    if len(aoHostHeaders) == 0:
-      fShowDebugOutput("The request has no host header");
-      return (
-        foGetErrorResponse(oRequest.sbVersion, 400, b"The request has no host header."),
-        None, # Allow the server to continue handling requests.
-      );
-    
-    sbLowerHostHeader = aoHostHeaders[0].sbLowerValue;
-    for oAdditionalHeader in aoHostHeaders[1:]:
-      if oAdditionalHeader.sbLowerValue != sbLowerHostHeader:
-        fShowDebugOutput("The request has multiple contradicting host headers");
-        return (
-          foGetErrorResponse(oRequest.sbVersion, 400, b"The request has multiple contradicting host headers."),
-          None, # Allow the server to continue handling requests.
-        );
-    
     oHostnamePortMatch = grbHostnamePort.match(oRequest.sbURL);
     if not oHostnamePortMatch:
       fShowDebugOutput("HTTP request URL (%s) does not match 'hostname:port'." % repr(oRequest.sbURL));
@@ -656,19 +638,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     
     sbHostname, sbPortNumber = oHostnamePortMatch.groups();
     uPortNumber = int(sbPortNumber);
-    
-    sbHostHeaderHostname, sb0HostHeaderPortNumber = (sbLowerHostHeader.split(b":", 1) + [None])[:2];
-    u0HostHeaderPortNumber = int(sb0HostHeaderPortNumber) if sb0HostHeaderPortNumber is not None else None;
-    if (
-      sbHostHeaderHostname.lower() != sbHostname.lower()
-      or u0HostHeaderPortNumber not in (None, uPortNumber)
-    ):
-      fShowDebugOutput("HTTP request URL (%s) does not match the Host header (%s)." % (repr(oRequest.sbURL), repr(aoHostHeaders[0])));
-      return (
-        foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL did not match the 'Host' header."),
-        None, # Allow the server to continue handling requests.
-      );
-    
+
     oServerURL = cURL.foFromBytesString(b"https://%s:%d" % (sbHostname, uPortNumber));
     bInterceptTraffic = oSelf.__o0InterceptSSLConnectionsCertificateAuthority;
     try:
