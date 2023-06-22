@@ -534,7 +534,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
   
   @ShowDebugOutput
   def __ftxRequestHandler(oSelf, oServer, oConnection, oRequest, o0SecureConnectionInterceptedForServerURL = None):
-    # Return (o0Respone, f0NextConnectionHandler)
+    # Return (o0Respone, bCloseConnection, f0NextConnectionHandler)
     
     # Detect and handle CONNECT requests:
     t0xResult = oSelf.__f0txHandleConnectRequest(oConnection, oRequest);
@@ -547,7 +547,11 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       if oRequest.sbURL.split(b"://")[0] in [b"http", b"https"]:
         fShowDebugOutput("HTTP request URL (%s) is not valid." % repr(oRequest.sbURL));
         oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL was not valid.");
-        return (oResponse, None);
+        return (
+          oResponse,
+          oRequest.bIndicatesConnectionShouldBeClosed,
+          None, # No next connection handler
+        );
       oSelf.fFireCallbacks("direct request received from client", oConnection, oRequest);
       if fbIsProvided(oSelf.__fztxDirectRequestHandler):
         (oResponse, f0NextConnectionHandler) = oSelf.__fztxDirectRequestHandler(oSelf, oConnection, oRequest);
@@ -556,24 +560,40 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"This is a HTTP proxy, not a HTTP server.");
         f0NextConnectionHandler = None;
       oSelf.fFireCallbacks("direct request received and response sent to client", oConnection, oRequest, oResponse);
-      return (oResponse, f0NextConnectionHandler);
+      return (
+        oResponse,
+        oRequest.bIndicatesConnectionShouldBeClosed,
+        f0NextConnectionHandler,
+      );
     ### Sanity checks ##########################################################
     if oRequest.sbMethod.upper() not in [b"CONNECT", b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"TRACE", b"PATCH"]:
       fShowDebugOutput("HTTP request method (%s) is not valid." % repr(oRequest.sbMethod));
       oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The request method was not valid.");
-      return (oResponse, None);
+      return (
+        oResponse,
+        oRequest.bIndicatesConnectionShouldBeClosed,
+        None, # No next connection handler
+      );
     if o0SecureConnectionInterceptedForServerURL is not None:
       # This request was made to a connection we are intercepting after the client send a HTTP CONNECT request.
       # The URL should be relative:
       if oRequest.sbURL[:1] != b"/":
         fShowDebugOutput("HTTP request URL (%s) does not start with '/'." % repr(oRequest.sbURL));
         oResponse = foGetErrorResponse(oRequest.sbVersion, 400, b"The requested URL was not valid.");
-        return (oResponse, None);
+        return (
+          oResponse,
+          oRequest.bIndicatesConnectionShouldBeClosed,
+          None, # No next connection handler
+        );
       oURL = o0SecureConnectionInterceptedForServerURL.foFromRelativeBytesString(oRequest.sbURL);
     o0Response = oSelf.__fo0GetResponseForInvalidProxyHeaderInRequest(oRequest)
     if o0Response:
       fShowDebugOutput("Invalid proxy header.");
-      return (o0Response, None);
+      return (
+        o0Response,
+        oRequest.bIndicatesConnectionShouldBeClosed,
+        None, # No next connection handler
+      );
     oHeaders = oRequest.oHeaders.foClone();
     # This client does not decide how we handle our connection to the server, so we will overwrite any "Connection"
     # header copied from the request to the proxy with the value we want for the request to the server:
@@ -606,11 +626,19 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     else:
       if oSelf.__bStopping:
         fShowDebugOutput("Stopping.");
-        return (None, None);
+        return (
+          None, # No response
+          True, # Close connection
+          None, # No next connection handler
+        );
       assert o0Response, \
           "Expected a response but got %s" % repr(o0Response);
       oResponse = o0Response;
-    return (oResponse, None);
+    return (
+      oResponse,
+      oRequest.bIndicatesConnectionShouldBeClosed,
+      None, # No next connection handler
+    );
   
   @ShowDebugOutput
   def __fo0GetResponseForInvalidProxyHeaderInRequest(oSelf, oRequest):
@@ -633,6 +661,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       fShowDebugOutput("HTTP request URL (%s) does not match 'hostname:port'." % repr(oRequest.sbURL));
       return (
         foGetErrorResponse(oRequest.sbVersion, 400, b"The request does not provide a valid hostname:port."),
+        oRequest.bIndicatesConnectionShouldBeClosed,
         None, # Allow the server to continue handling requests.
       );
     
@@ -641,6 +670,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
 
     oServerURL = cURL.foFromBytesString(b"https://%s:%d" % (sbHostname, uPortNumber));
     bInterceptTraffic = oSelf.__o0InterceptSSLConnectionsCertificateAuthority;
+    fShowDebugOutput("Connecting to server %s on behalf of the client." % repr(oServerURL));
     try:
       o0ConnectionToServer = oSelf.__oClient.fo0GetConnectionAndStartTransactionForURL(
         oServerURL,
@@ -649,12 +679,14 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     except Exception as oException:
       return (
         oSelf.foGetResponseForException(oException, oRequest.sbVersion),
+        oRequest.bIndicatesConnectionShouldBeClosed,
         None, # Allow the server to continue handling requests.
       );
     if o0ConnectionToServer is None:
       # This is probably because we are stopping.
       return (
         foGetErrorResponse(oRequest.sbVersion, 500, b"Could not connect to server."),
+        oRequest.bIndicatesConnectionShouldBeClosed,
         None, # Allow the server to continue handling requests.
       );
     oConnectionToServer = o0ConnectionToServer;
@@ -667,6 +699,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       oSelf.__oPropertyAccessTransactionLock.fRelease();
     # Once we are done piping requests, we can forget about the connections:
     def fCleanupAfterPipingConnection():
+      fShowDebugOutput("Cleanup after piping connection to server %s." % repr(oServerURL));
       # Disconnect once we're done piping connections.
       for oConnection in (oConnectionToServer, oConnectionFromClient):
         try:
@@ -714,6 +747,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         ),
         fCleanupAfterPipingConnection(),
       );
+    fShowDebugOutput("Creating HTTP 200 Ok response for CONNECT %s request." % repr(oServerURL));
     # Send a reponse to the client.
     oResponse = cHTTPResponse(
       sbzVersion = oRequest.sbVersion,
@@ -725,7 +759,11 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       }),
       sb0Body = b"Connected to remote server.",
     );
-    return (oResponse, fNextConnectionHandler);
+    return (
+      oResponse,
+      False, # don't close connection
+      fNextConnectionHandler,
+    );
   
   @ShowDebugOutput
   def __fInterceptAndPipeConnection(oSelf, oConnectionFromClient, oConnectionToServer, oServerURL):
