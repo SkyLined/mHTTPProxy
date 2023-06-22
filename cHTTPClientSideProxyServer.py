@@ -127,7 +127,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       "request sent to server", "response received from server",
       "request sent to and response received from server",
       
-      "connection between client and server piped",  "connection between client and server intercepted",
+      "piping connection between client and server",  "intercepting and piping connection between client and server",
       
       "client terminated",
       "server terminated",
@@ -751,7 +751,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         n0zTimeoutInSeconds = oSelf.__n0SecureConnectionPipeTotalDurationTimeoutInSeconds,
       );
       oSelf.fFireCallbacks(
-        "connection between client and server intercepted",
+        "intercepting and piping connection between client and server",
         oConnectionFromClient = oConnectionFromClient,
         oServerURL = oServerURL,
       );
@@ -824,7 +824,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     assert not oConnectionToServer.bInTransaction, \
         "oConnectionToServer is in a transaction";
     oSelf.fFireCallbacks(
-      "connection between client and server piped",
+      "piping connection between client and server",
       oConnectionFromClient = oConnectionFromClient,
       oConnectionToServer = oConnectionToServer,
       oServerURL = oServerURL,
