@@ -58,7 +58,7 @@ def fTestClient(
   nEndWaitTimeoutInSeconds,
 ):
   oServersShouldBeRunningLock = threading.Lock();
-  oServersShouldBeRunningLock.acquire(); # Released once servers should stop runnning.
+  oServersShouldBeRunningLock.acquire(); # Released once servers should stop running.
   if bTestHTTP:
     oConsole.fOutput(INFO, "\u2500\u2500\u2500\u2500 Making a first test request to %s " % oTestHTTPURL, sPadding = "\u2500");
     (oRequest, o0Response) = oHTTPClient.fto0GetRequestAndResponseForURL(oTestHTTPURL);
@@ -251,6 +251,8 @@ def fTestClient(
       oConsole.fOutput(DIM, "  > Shutdown server is sleeping to keep the connection open....");
       oServersShouldBeRunningLock.acquire();
       oServersShouldBeRunningLock.release();
+      oConsole.fOutput(DIM, "  > Shutdown server is disconnecting the connection...");
+      oClientSocket.close();
       oConsole.fOutput(DIM, "  > Shutdown server thread terminated.");
       
     oConnectionShutdownServerThread = cThread(fConnectionShutdownServerThread);
@@ -275,6 +277,8 @@ def fTestClient(
       oConsole.fOutput(DIM, "  > Response timeout server is sleeping to avoid sending a response...");
       oServersShouldBeRunningLock.acquire();
       oServersShouldBeRunningLock.release();
+      oConsole.fOutput(DIM, "  > Response timeout server is disconnecting the connection...");
+      oClientSocket.close();
       oConsole.fOutput(DIM, "  > Response timeout thread terminated.");
       
     oResponseTimeoutServerThread = cThread(fResponseTimeoutServerThread);
@@ -297,6 +301,8 @@ def fTestClient(
       oConsole.fOutput(DIM, "  > Invalid HTTP Message server received request; sending invalid response...");
       oClientSocket.recv(0x1000); # This should cover the request, which we discard.
       oClientSocket.send(sbInvalidResponse);
+      oConsole.fOutput(DIM, "  > Invalid HTTP Message server is disconnecting the connection...");
+      oClientSocket.close();
       oConsole.fOutput(DIM, "  > Invalid HTTP Message server thread terminated.");
     
     oInvalidHTTPMessageServerThread = cThread(fInvalidHTTPMessageServerThread);
@@ -323,7 +329,7 @@ def fTestClient(
         auAcceptableStatusCodes = None;
       elif oHTTPClient.__class__.__name__ == "cHTTPClientUsingProxyServer":
         if auAcceptableStatusCodes:
-          oConsole.fStatus("  * Expecting a HTTP %s reponse..." % "/".join(["%03d" % uStatusCode for uStatusCode in auAcceptableStatusCodes]));
+          oConsole.fStatus("  * Expecting a HTTP %s response..." % "/".join(["%03d" % uStatusCode for uStatusCode in auAcceptableStatusCodes]));
           cExpectedExceptionClass = None;
       if uRequestNumber < uNumberOfRequests:
         # We do not yet expect an exception, so we won't handle one.
