@@ -26,12 +26,12 @@ from .mExceptions import *;
 gnDeadlockTimeoutInSeconds = 1; # We're not doing anything time consuming, so this should suffice.
 guDefaultPortNumber = 8080; # Default proxy port number
 
-grbHostnamePort = re.compile(
-  rb"^"                                     # {
-  rb"(" + cURL.sbHostnameRegExp + rb")"     #   (hostname)
-  rb"\:" rb"(\d+)"                          #   ":" (port)
-  rb"$",                                    # }
-  re.I
+grbHostAndPortNumber = re.compile(
+  rb"\A"
+  rb"(" + cURL.sbHostRegExp + rb")"         # (host)
+  rb"\:"                                    # ":"
+  rb"(" + cURL.sbPortNumberRegExp + rb")"   # (port number)
+  rb"\Z"                                    # end of string
 );
 
 def foGetErrorResponse(sbVersion, uStatusCode, sbBody):
@@ -61,14 +61,14 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
   
   @ShowDebugOutput
   def __init__(oSelf,
-    sbzHostname = zNotProvided, uzPortNumber = zNotProvided,
+    sbzHost = zNotProvided, uzPortNumber = zNotProvided,
     o0ServerSSLContext = None,
     o0zCertificateStore = zNotProvided,
     bUseChainedProxy = False,
     o0ChainedProxyURL = None,
     o0ChainedProxyHTTPClient = None,
     bVerifyCertificatesForChainedProxy = True,
-    bCheckChainedProxyHostname = True,
+    bCheckChainedProxyHost = True,
     u0zMaxNumberOfConnectionsToChainedProxy = zNotProvided,
     # Connections to proxy use nzConnectTimeoutInSeconds
     n0zSecureConnectionToChainedProxyTimeoutInSeconds = zNotProvided,
@@ -78,7 +78,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     n0zSecureTimeoutInSeconds = zNotProvided,
     n0zTransactionTimeoutInSeconds = zNotProvided,
     bVerifyCertificates = True,
-    bzCheckHostname = zNotProvided,
+    bzCheckHost = zNotProvided,
     n0zSecureConnectionPipeTotalDurationTimeoutInSeconds = zNotProvided,
     n0zSecureConnectionPipeIdleTimeoutInSeconds = zNotProvided,
     u0zMaxNumberOfConnectionsToServer = zNotProvided,
@@ -89,7 +89,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     oSelf.__n0zSecureTimeoutInSeconds = fxzGetFirstProvidedValueIfAny(n0zSecureTimeoutInSeconds, oSelf.n0DefaultSecureTimeoutInSeconds);
     oSelf.__n0zTransactionTimeoutInSeconds = fxzGetFirstProvidedValueIfAny(n0zTransactionTimeoutInSeconds, oSelf.n0DefaultTransactionTimeoutInSeconds);
     oSelf.__bVerifyCertificates = bVerifyCertificates;
-    oSelf.__bzCheckHostname = bzCheckHostname;
+    oSelf.__bzCheckHost = bzCheckHost;
     oSelf.__n0SecureConnectionPipeTotalDurationTimeoutInSeconds = fxGetFirstProvidedValue( \
         n0zSecureConnectionPipeTotalDurationTimeoutInSeconds, oSelf.n0DefaultSecureConnectionPipeTotalDurationTimeoutInSeconds);
     oSelf.__n0SecureConnectionPipeIdleTimeoutInSeconds = fxGetFirstProvidedValue( \
@@ -114,7 +114,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       
       "direct request received from client", "direct request received and response sent to client",
       
-      "server hostname or ip address invalid",
+      "server host or ip address invalid",
       
       "resolving server hostname", "resolving server hostname failed", "server hostname resolved to ip address",
       
@@ -151,7 +151,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         oSelf.__oClient = cHTTPClientUsingProxyServer(
           oProxyServerURL = o0ChainedProxyURL,
           bVerifyCertificatesForProxy = bVerifyCertificatesForChainedProxy,
-          bCheckProxyHostname = bCheckChainedProxyHostname,
+          bCheckProxyHost = bCheckChainedProxyHost,
           o0zCertificateStore = o0zCertificateStore,
           u0zMaxNumberOfConnectionsToProxy = fxGetFirstProvidedValue( \
               u0zMaxNumberOfConnectionsToChainedProxy, oSelf.u0DefaultMaxNumberOfConnectionsToChainedProxy),
@@ -161,13 +161,13 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           n0zSecureConnectionToServerTimeoutInSeconds = oSelf.__n0zSecureTimeoutInSeconds,
           n0zTransactionTimeoutInSeconds = oSelf.__n0zTransactionTimeoutInSeconds,
           bVerifyCertificates = bVerifyCertificates,
-          bzCheckHostname = bzCheckHostname,
+          bzCheckHost = bzCheckHost,
         );
       else:
         oSelf.__oClient = cHTTPClientUsingAutomaticProxyServer(
           o0zCertificateStore = o0zCertificateStore, 
           bVerifyCertificatesForProxy = bVerifyCertificatesForChainedProxy,
-          bCheckProxyHostname = bCheckChainedProxyHostname,
+          bCheckProxyHost = bCheckChainedProxyHost,
           u0zMaxNumberOfConnectionsToServerWithoutProxy = u0zMaxNumberOfConnectionsToServer,
           u0zMaxNumberOfConnectionsToProxy = fxGetFirstProvidedValue( \
               u0zMaxNumberOfConnectionsToChainedProxy, oSelf.u0DefaultMaxNumberOfConnectionsToChainedProxy),
@@ -179,7 +179,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
               n0zSecureConnectionToChainedProxyTimeoutInSeconds, oSelf.n0DefaultSecureConnectionToChainedProxyTimeoutInSeconds),
           n0zSecureConnectionToServerTimeoutInSeconds = oSelf.__n0zSecureTimeoutInSeconds,
           bVerifyCertificates = bVerifyCertificates,
-          bzCheckHostname = bzCheckHostname,
+          bzCheckHost = bzCheckHost,
         );
     else:
       assert o0ChainedProxyURL is None, \
@@ -193,11 +193,11 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
         n0zSecureTimeoutInSeconds = oSelf.__n0zSecureTimeoutInSeconds,
         n0zTransactionTimeoutInSeconds = oSelf.__n0zTransactionTimeoutInSeconds,
         bVerifyCertificates = bVerifyCertificates,
-        bzCheckHostname = bzCheckHostname,
+        bzCheckHost = bzCheckHost,
       );
     oSelf.__oServer = cHTTPServer(
       ftxRequestHandler = oSelf.__ftxRequestHandler,
-      sbzHostname = sbzHostname,
+      sbzHost = sbzHost,
       uzPortNumber = fxGetFirstProvidedValue(uzPortNumber, guDefaultPortNumber),
       o0SSLContext = o0ServerSSLContext,
     );
@@ -206,9 +206,9 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     if isinstance(oSelf.__oClient, (cHTTPClient, cHTTPClientUsingAutomaticProxyServer)):
       # Events produced by clients that can connect directly to a HTTP server"
       oSelf.__oClient.fAddCallbacks({
-        "server hostname or ip address invalid": lambda oClient, sbHostnameOrIPAddress: oSelf.fFireCallbacks(
-          "server hostname or ip address invalid",
-          sbHostnameOrIPAddress = sbHostnameOrIPAddress,
+        "server host invalid": lambda oClient, sbHost: oSelf.fFireCallbacks(
+          "server host invalid",
+          sbHost = sbHost,
         ),
         "resolving server hostname": lambda oClient, sbHostname: oSelf.fFireCallbacks(
           "resolving server hostname",
@@ -218,50 +218,48 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           "resolving server hostname failed",
           sbHostname = sbHostname,
         ),
-        "server hostname resolved to ip address": lambda oClient, sbHostname, sIPAddress, sCanonicalName: oSelf.fFireCallbacks(
+        "server hostname resolved to ip address": lambda oClient, sbHostname, sbIPAddress, sCanonicalName: oSelf.fFireCallbacks(
           "server hostname resolved to ip address",
           sbHostname = sbHostname,
-          sIPAddress = sIPAddress,
+          sbIPAddress = sbIPAddress,
           sCanonicalName = sCanonicalName,
         ),
-        "connecting to server ip address": lambda oClient, sbHostnameOrIPAddress, uPortNumber, sIPAddress, sbzHostname: oSelf.fFireCallbacks(
+        "connecting to server ip address": lambda oClient, sbHost, sbIPAddress, uPortNumber: oSelf.fFireCallbacks(
           "connecting to server ip address",
-          sbHostnameOrIPAddress = sbHostnameOrIPAddress,
+          sbHost = sbHost,
+          sbIPAddress = sbIPAddress,
           uPortNumber = uPortNumber,
-          sIPAddress = sIPAddress,
-          sbzHostname = sbzHostname,
         ),
-        "connecting to server ip address failed": lambda oClient, oException, sbHostnameOrIPAddress, uPortNumber, sIPAddress, sbzHostname: oSelf.fFireCallbacks(
+        "connecting to server ip address failed": lambda oClient, oException, sbHost, sbIPAddress, uPortNumber: oSelf.fFireCallbacks(
           "connecting to server ip address failed",
           oException = oException,
-          sbHostnameOrIPAddress = sbHostnameOrIPAddress,
+          sbHost = sbHost,
+          sbIPAddress = sbIPAddress,
           uPortNumber = uPortNumber,
-          sIPAddress = sIPAddress,
-          sbzHostname = sbzHostname,
         ),
-        "connecting to server failed": lambda oClient, sbHostnameOrIPAddress, uPortNumber, oException: oSelf.fFireCallbacks(
+        "connecting to server failed": lambda oClient, sbHost, uPortNumber, oException: oSelf.fFireCallbacks(
           "connecting to server failed",
-          sbHostnameOrIPAddress = sbHostnameOrIPAddress,
+          sbHost = sbHost,
           uPortNumber = uPortNumber,
           oException = oException,
         ),
-        "connection to server created": lambda oClient, oConnection, sbHostnameOrIPAddress: oSelf.fFireCallbacks(
+        "connection to server created": lambda oClient, oConnection, sbHost: oSelf.fFireCallbacks(
           "connection to server created",
           oConnection = oConnection,
-          sbHostnameOrIPAddress = sbHostnameOrIPAddress,
+          sbHost = sbHost,
         ),
-        "connection to server terminated": lambda oClient, oConnection, sbHostnameOrIPAddress: oSelf.fFireCallbacks(
+        "connection to server terminated": lambda oClient, oConnection, sbHost: oSelf.fFireCallbacks(
           "connection to server terminated",
           oConnection = oConnection,
-          sbHostnameOrIPAddress = sbHostnameOrIPAddress,
+          sbHost = sbHost,
         ),
       });
     if isinstance(oSelf.__oClient, (cHTTPClientUsingProxyServer, cHTTPClientUsingAutomaticProxyServer)):
       # Events produced by clients that can connect through a HTTP proxy:
       oSelf.__oClient.fAddCallbacks({
-        "proxy hostname or ip address invalid": lambda oClient, sbHostnameOrIPAddress: oSelf.fFireCallbacks(
-          "proxy hostname or ip address invalid",
-          sbHostnameOrIPAddress = sbHostnameOrIPAddress,
+        "proxy host invalid": lambda oClient, sbHost: oSelf.fFireCallbacks(
+          "proxy host invalid",
+          sbHost = sbHost,
         ),
         "resolving proxy hostname": lambda oClient, sbHostname: oSelf.fFireCallbacks(
           "resolving proxy hostname",
@@ -271,24 +269,22 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
           "resolving proxy hostname failed",
           sbHostname = sbHostname,
         ),
-        "proxy hostname resolved to ip address": lambda oClient, sbHostname, sIPAddress, sCanonicalName: oSelf.fFireCallbacks(
+        "proxy hostname resolved to ip address": lambda oClient, sbHostname, sbIPAddress, sCanonicalName: oSelf.fFireCallbacks(
           "proxy hostname resolved to ip address",
           sbHostname = sbHostname,
-          sIPAddress = sIPAddress,
+          sbIPAddress = sbIPAddress,
           sCanonicalName = sCanonicalName,
         ),
-        "connecting to proxy ip address": lambda oClient, oProxyServerURL, sIPAddress, sbzHostname: oSelf.fFireCallbacks(
+        "connecting to proxy ip address": lambda oClient, oProxyServerURL, sbIPAddress: oSelf.fFireCallbacks(
           "connecting to proxy ip address",
           oProxyServerURL = oProxyServerURL,
-          sIPAddress = sIPAddress,
-          sbzHostname = sbzHostname,
+          sbIPAddress = sbIPAddress,
         ),
-        "connecting to proxy ip address failed": lambda oClient, oException, oProxyServerURL, sIPAddress, sbzHostname: oSelf.fFireCallbacks(
+        "connecting to proxy ip address failed": lambda oClient, oException, oProxyServerURL, sbIPAddress: oSelf.fFireCallbacks(
           "connecting to proxy ip address failed",
           oException = oException,
           oProxyServerURL = oProxyServerURL,
-          sIPAddress = sIPAddress,
-          sbzHostname = sbzHostname,
+          sbIPAddress = sbIPAddress,
         ),
         "connecting to proxy failed": lambda oClient, oConnection, oProxyServerURL: oSelf.fFireCallbacks(
           "connecting to proxy failed",
@@ -369,7 +365,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     });
   
   def foGetResponseForException(oSelf, oException, sbHTTPVersion):
-    if isinstance(oException, (oSelf.cTCPIPDNSUnknownHostnameException, oSelf.cTCPIPInvalidAddressException)):
+    if isinstance(oException, (oSelf.cTCPIPDNSNameCannotBeResolvedException, oSelf.cTCPIPInvalidAddressException)):
       return foGetErrorResponse(sbHTTPVersion, 400, b"The server cannot be found.");
     if isinstance(oException, oSelf.cTCPIPConnectTimeoutException):
       return foGetErrorResponse(sbHTTPVersion, 504, b"Connecting to the server timed out.");
@@ -383,7 +379,7 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
       return foGetErrorResponse(sbHTTPVersion, 502, b"The server send an invalid HTTP response.");
     if oSelf.bSSLIsSupported and isinstance(oException, oSelf.cSSLSecureTimeoutException):
       return foGetErrorResponse(sbHTTPVersion, 504, b"The connection to the server could not be secured before the request timed out.");
-    if oSelf.bSSLIsSupported and isinstance(oException, (oSelf.cSSLSecureHandshakeException, oSelf.cSSLIncorrectHostnameException)):
+    if oSelf.bSSLIsSupported and isinstance(oException, (oSelf.cSSLSecureHandshakeException, oSelf.cSSLIncorrectHostException)):
       return foGetErrorResponse(sbHTTPVersion, 504, b"The connection to the server could not be secured.");
     raise;
   
@@ -656,19 +652,19 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     if oRequest.sbMethod.upper() != b"CONNECT":
       return None;
     
-    oHostnamePortMatch = grbHostnamePort.match(oRequest.sbURL);
-    if not oHostnamePortMatch:
-      fShowDebugOutput("HTTP request URL (%s) does not match 'hostname:port'." % repr(oRequest.sbURL));
+    oHostAndPortNumberMatch = grbHostAndPortNumber.match(oRequest.sbURL);
+    if not oHostAndPortNumberMatch:
+      fShowDebugOutput("HTTP request URL (%s) does not match 'host:port'." % repr(oRequest.sbURL));
       return (
-        foGetErrorResponse(oRequest.sbVersion, 400, b"The request does not provide a valid hostname:port."),
+        foGetErrorResponse(oRequest.sbVersion, 400, b"The request does not provide a valid host:port."),
         oRequest.bIndicatesConnectionShouldBeClosed,
         None, # Allow the server to continue handling requests.
       );
     
-    sbHostname, sbPortNumber = oHostnamePortMatch.groups();
+    (sbHost, sbPortNumber) = oHostAndPortNumberMatch.groups();
     uPortNumber = int(sbPortNumber);
 
-    oServerURL = cURL.foFromBytesString(b"https://%s:%d" % (sbHostname, uPortNumber));
+    oServerURL = cURL.foFromBytesString(b"https://%s:%d" % (sbHost, uPortNumber));
     bInterceptTraffic = oSelf.__o0InterceptSSLConnectionsCertificateAuthority;
     fShowDebugOutput("Connecting to server %s on behalf of the client." % repr(oServerURL));
     try:
@@ -776,16 +772,16 @@ class cHTTPClientSideProxyServer(cWithCallbacks):
     # connection, forward it to the server to get a response using the same code as the normal proxy, and then
     # send the response back to the client.
     fShowDebugOutput("Intercepting secure connection for client %s to server %s." % (oConnectionFromClient, repr(oServerURL.sbBase)));
-    fShowDebugOutput("Generating SSL certificate for %s..." % repr(oServerURL.sbHostname));
-    oSSLContext = oSelf.__o0InterceptSSLConnectionsCertificateAuthority.foGenerateServersideSSLContextForHostname(
-      oServerURL.sbHostname,
+    fShowDebugOutput("Generating SSL certificate for %s..." % repr(oServerURL.sbHost));
+    oSSLContext = oSelf.__o0InterceptSSLConnectionsCertificateAuthority.foGenerateServersideSSLContextForHost(
+      oServerURL.sbHost,
     );
     try:
       fShowDebugOutput("Negotiating security for %s..." % oConnectionFromClient);
       sWhile = "Negotiating security for %s" % oConnectionFromClient;
       oConnectionFromClient.fSecure(
         oSSLContext,
-        bzCheckHostname = oSelf.__bzCheckHostname,
+        bzCheckHost = oSelf.__bzCheckHost,
         n0zTimeoutInSeconds = oSelf.__n0SecureConnectionPipeTotalDurationTimeoutInSeconds,
       );
       oSelf.fFireCallbacks(

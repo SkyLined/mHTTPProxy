@@ -184,7 +184,7 @@ def fTestClient(
     atxTests.append((
       1,
       oUnknownHostnameURL,
-      cHTTPConnection.cTCPIPDNSUnknownHostnameException,
+      cHTTPConnection.cTCPIPDNSNameCannotBeResolvedException,
       [],
       [400],
     ));
@@ -210,7 +210,7 @@ def fTestClient(
   if bTestConnectionRefused:
     # Create a server on a socket but do not listen so connections are refused.
     oConnectionRefusedServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
-    oConnectionRefusedServerSocket.bind((oConnectionRefusedURL.sbHostname, oConnectionRefusedURL.uPortNumber));
+    oConnectionRefusedServerSocket.bind((oConnectionRefusedURL.sbHost, oConnectionRefusedURL.uPortNumber));
     atxTests.append((
       1,
       oConnectionRefusedURL,
@@ -222,7 +222,7 @@ def fTestClient(
   if bTestConnectionDisconnected:
     # Create a server on a socket that immediately closes the connection.
     oConnectionDisconnectedServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
-    oConnectionDisconnectedServerSocket.bind((oConnectionDisconnectedURL.sbHostname, oConnectionDisconnectedURL.uPortNumber));
+    oConnectionDisconnectedServerSocket.bind((oConnectionDisconnectedURL.sbHost, oConnectionDisconnectedURL.uPortNumber));
     oConnectionDisconnectedServerSocket.listen(1);
     def fConnectionDisconnectedServerThread():
       (oClientSocket, (sClientIP, uClientPortNumber)) = oConnectionDisconnectedServerSocket.accept();
@@ -242,7 +242,7 @@ def fTestClient(
   if bTestConnectionShutdown:
     # Create a server on a socket that immediately shuts down the connection.
     oConnectionShutdownServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
-    oConnectionShutdownServerSocket.bind((oConnectionShutdownURL.sbHostname, oConnectionShutdownURL.uPortNumber));
+    oConnectionShutdownServerSocket.bind((oConnectionShutdownURL.sbHost, oConnectionShutdownURL.uPortNumber));
     oConnectionShutdownServerSocket.listen(1);
     def fConnectionShutdownServerThread():
       (oClientSocket, (sClientIP, uClientPortNumber)) = oConnectionShutdownServerSocket.accept();
@@ -266,7 +266,7 @@ def fTestClient(
   if bTestResponseTimeout:
     # Create a server on a socket that does not send a response.
     oResponseTimeoutServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
-    oResponseTimeoutServerSocket.bind((oResponseTimeoutURL.sbHostname, oResponseTimeoutURL.uPortNumber));
+    oResponseTimeoutServerSocket.bind((oResponseTimeoutURL.sbHost, oResponseTimeoutURL.uPortNumber));
     oResponseTimeoutServerSocket.listen(1);
     def fResponseTimeoutServerThread():
       (oClientSocket, (sClientIP, uClientPortNumber)) = oResponseTimeoutServerSocket.accept();
@@ -289,7 +289,7 @@ def fTestClient(
   if bTestInvalidHTTPMessage:
     # Create a server on a socket that sends an invalid response.
     oInvalidHTTPMessageServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
-    oInvalidHTTPMessageServerSocket.bind((oInvalidHTTPMessageURL.sbHostname, oInvalidHTTPMessageURL.uPortNumber));
+    oInvalidHTTPMessageServerSocket.bind((oInvalidHTTPMessageURL.sbHost, oInvalidHTTPMessageURL.uPortNumber));
     oInvalidHTTPMessageServerSocket.listen(1);
     sbInvalidResponse = b"Hello, world!\r\n";
     def fInvalidHTTPMessageServerThread():

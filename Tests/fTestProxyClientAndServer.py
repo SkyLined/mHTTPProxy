@@ -13,10 +13,10 @@ def fTestProxyClientAndServer(
 ):
   oConsole.fOutput("\u2500\u2500\u2500\u2500 Creating a client side HTTP proxy server... ", sPadding = "\u2500");
   oProxyServer = cHTTPClientSideProxyServer(
-    sbzHostname = oProxyServerURL.sbHostname,
+    sbzHost = oProxyServerURL.sbHost,
     uzPortNumber = oProxyServerURL.uPortNumber,
     o0ServerSSLContext = (
-      o0CertificateStore.foGetServersideSSLContextForHostname(oProxyServerURL.sbHostname)
+      o0CertificateStore.foGetServersideSSLContextForHost(oProxyServerURL.sbHost)
     ) if oProxyServerURL.bSecure else None,
     o0zCertificateStore = o0CertificateStore,
     o0InterceptSSLConnectionsCertificateAuthority = o0InterceptSSLConnectionsCertificateAuthority,
